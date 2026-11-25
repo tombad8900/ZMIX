@@ -48,6 +48,9 @@ class LibraryPlaylist {
     required this.thumbUrl,
     required this.videos,
     required this.addedAt,
+    this.importComplete = true,
+    this.totalCountHint,
+    this.importNote,
   });
 
   final String id;
@@ -60,6 +63,17 @@ class LibraryPlaylist {
   final List<LibraryVideo> videos;
   final DateTime addedAt;
 
+  /// False when the import stopped before the last page (cancelled or
+  /// interrupted); the UI must show this state instead of implying a whole
+  /// playlist. [totalCountHint] is YouTube's own video count when known.
+  final bool importComplete;
+  final int? totalCountHint;
+
+  /// Machine note when [importComplete] is false: 'cancelled' | 'network' |
+  /// 'ceiling' | 'short_of_declared' (YouTube declares more videos than it
+  /// serves, e.g. deleted/private/duplicated entries).
+  final String? importNote;
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -68,6 +82,9 @@ class LibraryPlaylist {
         'thumbUrl': thumbUrl,
         'videos': videos.map((v) => v.toJson()).toList(),
         'addedAt': addedAt.toIso8601String(),
+        'importComplete': importComplete,
+        'totalCountHint': totalCountHint,
+        'importNote': importNote,
       };
 
   factory LibraryPlaylist.fromJson(Map<String, dynamic> j) => LibraryPlaylist(
@@ -81,6 +98,9 @@ class LibraryPlaylist {
             .toList(),
         addedAt: DateTime.tryParse(j['addedAt'] as String? ?? '') ??
             DateTime.fromMillisecondsSinceEpoch(0),
+        importComplete: j['importComplete'] as bool? ?? true,
+        totalCountHint: j['totalCountHint'] as int?,
+        importNote: j['importNote'] as String?,
       );
 }
 

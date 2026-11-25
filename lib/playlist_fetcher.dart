@@ -4,6 +4,24 @@ import 'package:http/http.dart' as http;
 
 import 'models.dart';
 
+/// Outcome of a paginated playlist fetch. [complete] is false when fetching
+/// stopped before the last page (cancelled, network failure mid-way, or the
+/// protective ceiling); the caller must surface that state, never present a
+/// partial import as whole.
+class FetchResult {
+  FetchResult({
+    required this.videos,
+    required this.complete,
+    this.stopReason,
+  });
+
+  final List<LibraryVideo> videos;
+  final bool complete;
+
+  /// 'cancelled' | 'network' | 'ceiling' when [complete] is false.
+  final String? stopReason;
+}
+
 /// ZMIX's own playlist-video fetcher.
 ///
 /// Why this exists: YouTube moved playlist pages (HTML and InnerTube browse)
@@ -29,23 +47,51 @@ class PlaylistFetcher {
     'client': {'clientName': 'WEB', 'clientVersion': '2.20250219.01.00'},
   };
 
-  static const int maxVideos = 200;
+  /// Protective ceiling only (runaway-page guard), not a UX cap: a playlist
+  /// of 2,000+ videos imports in full.
+  static const int maxVideos = 20000;
 
-  Future<List<LibraryVideo>> fetchVideos(String playlistId) async {
+  /// Fetches every video of [playlistId], following continuation pages.
+  ///
+  /// [onProgress] is called after each page with the cumulative count.
+  /// [isCancelled] is polled between pages; when it returns true the fetch
+  /// stops and the result is marked incomplete ('cancelled'). A failure after
+  /// the first page likewise returns what was fetched, marked incomplete
+  /// ('network'); a failure on the first page throws, since there is nothing
+  /// usable to show.
+  Future<FetchResult> fetchVideos(
+    String playlistId, {
+    void Function(int fetched)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
     final videos = <LibraryVideo>[];
     final seen = <String>{};
+    var firstPage = true;
     Map<String, dynamic> body = {
       'context': _context,
       'browseId': 'VL$playlistId',
     };
-    while (videos.length < maxVideos) {
-      final response = await _client
-          .post(_browseUrl, headers: _headers, body: jsonEncode(body))
-          .timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw StateError('browse HTTP ${response.statusCode}');
+    while (true) {
+      if (isCancelled?.call() ?? false) {
+        return FetchResult(
+            videos: videos, complete: false, stopReason: 'cancelled');
       }
-      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      http.Response response;
+      dynamic decoded;
+      try {
+        response = await _client
+            .post(_browseUrl, headers: _headers, body: jsonEncode(body))
+            .timeout(const Duration(seconds: 20));
+        if (response.statusCode != 200) {
+          throw StateError('browse HTTP ${response.statusCode}');
+        }
+        decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      } catch (_) {
+        if (firstPage) rethrow;
+        return FetchResult(
+            videos: videos, complete: false, stopReason: 'network');
+      }
+      firstPage = false;
       final lockups = <Map<String, dynamic>>[];
       _findAll(decoded, 'lockupViewModel', lockups);
       var newOnThisPage = 0;
@@ -58,15 +104,20 @@ class PlaylistFetcher {
           videos.add(video);
           newOnThisPage++;
         }
-        if (videos.length >= maxVideos) break;
       }
-      if (videos.length >= maxVideos) break;
-      if (newOnThisPage == 0) break; // no progress: avoid looping on a dead page
+      onProgress?.call(videos.length);
+      if (videos.length >= maxVideos) {
+        return FetchResult(
+            videos: videos, complete: false, stopReason: 'ceiling');
+      }
       final token = _findContinuation(decoded);
-      if (token == null) break;
+      if (token == null || newOnThisPage == 0) {
+        return FetchResult(videos: videos, complete: true);
+      }
       body = {'context': _context, 'continuation': token};
+      // Gentle pacing between pages, like a user scrolling.
+      await Future<void>.delayed(const Duration(milliseconds: 120));
     }
-    return videos;
   }
 
   LibraryVideo? _parseLockup(Map<String, dynamic> lockup, String id) {

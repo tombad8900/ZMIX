@@ -11,7 +11,12 @@ class YoutubeService {
 
   /// Fetches a playlist's real metadata and video list from YouTube.
   /// Throws [FormatException] when the link is not a playlist link.
-  Future<LibraryPlaylist> fetchPlaylist(String input, {String? nickname}) async {
+  Future<LibraryPlaylist> fetchPlaylist(
+    String input, {
+    String? nickname,
+    void Function(int fetched)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
     final parsed = PlaylistId.parsePlaylistId(input.trim());
     if (parsed == null) {
       throw const FormatException('مش قادر أفهم الرابط ده كقائمة تشغيل يوتيوب');
@@ -21,11 +26,30 @@ class YoutubeService {
     // pages to lockupViewModel (verified 2026-11-25); ZMIX fetches the list
     // itself from the same public endpoint the website uses.
     final fetcher = PlaylistFetcher();
-    final List<LibraryVideo> videos;
+    final FetchResult result;
     try {
-      videos = await fetcher.fetchVideos(playlist.id.value);
+      result = await fetcher.fetchVideos(
+        playlist.id.value,
+        onProgress: onProgress,
+        isCancelled: isCancelled,
+      );
     } finally {
       fetcher.close();
+    }
+    final videos = result.videos;
+    // Honest count handling: even a fully paginated import can come back
+    // short of YouTube's declared videoCount (deleted/private/duplicated
+    // entries are counted in the header but never served). Surface that as
+    // its own state instead of implying the library holds every video.
+    final declared = playlist.videoCount;
+    var complete = result.complete;
+    String? note = result.stopReason;
+    if (result.complete &&
+        declared != null &&
+        videos.length < declared &&
+        (declared - videos.length) > 2) {
+      complete = false;
+      note = 'short_of_declared';
     }
     final name = (nickname != null && nickname.trim().isNotEmpty)
         ? nickname.trim()
@@ -40,6 +64,9 @@ class YoutubeService {
           : playlist.thumbnails.highResUrl,
       videos: videos,
       addedAt: DateTime.now(),
+      importComplete: complete,
+      totalCountHint: playlist.videoCount,
+      importNote: note,
     );
   }
 

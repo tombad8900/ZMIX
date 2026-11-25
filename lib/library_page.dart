@@ -283,8 +283,13 @@ class _PlaylistCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${playlist.videos.length} فيديو',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFFC9C9D4)),
+                    _countLabel(playlist),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: playlist.importComplete
+                          ? const Color(0xFFC9C9D4)
+                          : const Color(0xFFFFC36B),
+                    ),
                   ),
                 ],
               ),
@@ -293,6 +298,21 @@ class _PlaylistCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+String _countLabel(LibraryPlaylist playlist) {
+  if (playlist.importComplete) return '${playlist.videos.length} فيديو';
+  final got = playlist.videos.length;
+  switch (playlist.importNote) {
+    case 'short_of_declared':
+      return '$got من ${playlist.totalCountHint} معلنة - الباقي مش متاح من يوتيوب';
+    case 'cancelled':
+      return '$got فيديو - الاستيراد اتلغى';
+    case 'network':
+      return '$got فيديو - الاستيراد وقف في النص';
+    default:
+      return '$got فيديو - ناقصة';
   }
 }
 
@@ -330,6 +350,7 @@ class _AddPlaylistSheetState extends State<AddPlaylistSheet> {
   final TextEditingController _urlController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   bool _busy = false;
+  bool _cancelRequested = false;
   String? _status;
   String? _error;
 
@@ -337,6 +358,7 @@ class _AddPlaylistSheetState extends State<AddPlaylistSheet> {
     if (_busy) return;
     setState(() {
       _busy = true;
+      _cancelRequested = false;
       _error = null;
       _status = 'بنقرأ القائمة من يوتيوب...';
     });
@@ -345,6 +367,12 @@ class _AddPlaylistSheetState extends State<AddPlaylistSheet> {
       final playlist = await service.fetchPlaylist(
         _urlController.text,
         nickname: _nameController.text,
+        onProgress: (fetched) {
+          if (mounted) {
+            setState(() => _status = 'بنستورد... وصلنا لـ $fetched فيديو');
+          }
+        },
+        isCancelled: () => _cancelRequested,
       );
       if (playlist.videos.isEmpty) {
         setState(() {
@@ -355,7 +383,18 @@ class _AddPlaylistSheetState extends State<AddPlaylistSheet> {
       }
       setState(() => _status = 'بنحفظ ${playlist.videos.length} فيديو...');
       await widget.store.addPlaylist(playlist);
-      if (mounted) Navigator.pop(context, true);
+      if (!mounted) return;
+      if (!playlist.importComplete) {
+        // Partial import stays visibly partial; never implied complete.
+        final detail = playlist.importNote == 'short_of_declared'
+            ? 'يوتيوب بيعلن ${playlist.totalCountHint} فيديو لكن اللي بيقدمه فعليًا ${playlist.videos.length} بس (غالبًا فيه فيديوهات محذوفة أو خاصة جوه القايمة).'
+            : 'اتحفظ ${playlist.videos.length} فيديو بس - الاستيراد مكملش للآخر. إعادة إضافة القايمة بتستكملها.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(detail),
+          duration: const Duration(seconds: 7),
+        ));
+      }
+      Navigator.pop(context, true);
     } on FormatException catch (e) {
       setState(() {
         _error = e.message;
@@ -429,6 +468,11 @@ class _AddPlaylistSheetState extends State<AddPlaylistSheet> {
             ),
             child: Text(_busy ? 'بنجيب...' : 'إضافة للمكتبة'),
           ),
+          if (_busy)
+            TextButton(
+              onPressed: () => setState(() => _cancelRequested = true),
+              child: const Text('إلغاء الاستيراد والاحتفاظ باللي اتجاب'),
+            ),
         ],
       ),
     );
