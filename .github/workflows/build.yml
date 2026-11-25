@@ -1,0 +1,42 @@
+name: Build ZMIX APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g. trial-0.1)'
+        required: true
+        default: 'trial-0.1'
+      release_name:
+        description: 'Release title'
+        required: true
+        default: 'ZMIX Trial 0.1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      - run: flutter pub get
+      - name: Build arm64 release APK
+        run: flutter build apk --release --target-platform android-arm64
+      - name: Rename APK
+        run: cp build/app/outputs/flutter-apk/app-release.apk "zmix-${{ github.event.inputs.release_tag }}-arm64.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zmix-apk
+          path: "zmix-${{ github.event.inputs.release_tag }}-arm64.apk"
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: ${{ github.event.inputs.release_name }}
+          files: "zmix-${{ github.event.inputs.release_tag }}-arm64.apk"
