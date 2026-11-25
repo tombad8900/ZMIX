@@ -5,6 +5,7 @@ void main() {
   group('buildQualityChoices', () {
     test('one entry per height, best first, muxed beats video-only', () {
       final out = YoutubeService.buildQualityChoices(
+        hasAudio: true,
         muxed: [
           (url: 'm360', height: 360, bitrate: 500, codec: 'avc1.4d'),
         ],
@@ -26,12 +27,41 @@ void main() {
 
     test('labels come from resolution height, 4K included honestly', () {
       final out = YoutubeService.buildQualityChoices(
+        hasAudio: true,
         muxed: const [],
         videoOnly: [
           (url: 'v2160', height: 2160, bitrate: 20000, codec: 'vp9'),
         ],
       );
       expect(out.single.quality, '2160p');
+    });
+
+    test('REGRESSION: no paired audio -> video-only entries never offered',
+        () {
+      final out = YoutubeService.buildQualityChoices(
+        hasAudio: false,
+        muxed: [
+          (url: 'm360', height: 360, bitrate: 500, codec: 'avc1.4d'),
+        ],
+        videoOnly: [
+          (url: 'v720', height: 720, bitrate: 2000, codec: 'vp9'),
+          (url: 'v1080', height: 1080, bitrate: 4000, codec: 'avc1.64'),
+        ],
+      );
+      // Silent playback is never offered: only the muxed fallback remains.
+      expect(out.map((o) => o.quality).toList(), ['360p']);
+      expect(out.every((o) => !o.videoOnly), isTrue);
+    });
+
+    test('no audio and no muxed -> empty list, not a silent offer', () {
+      final out = YoutubeService.buildQualityChoices(
+        hasAudio: false,
+        muxed: const [],
+        videoOnly: [
+          (url: 'v720', height: 720, bitrate: 2000, codec: 'vp9'),
+        ],
+      );
+      expect(out, isEmpty);
     });
   });
 

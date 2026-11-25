@@ -154,8 +154,19 @@ class YoutubeService {
     if (manifest.muxed.isEmpty && manifest.videoOnly.isEmpty) {
       throw const FormatException('مفيش صيغة تشغيل متاحة للفيديو ده');
     }
+    final audioUrl = pickAudioUrl([
+      for (final s in manifest.audioOnly)
+        (
+          url: s.url.toString(),
+          bitrate: s.bitrate.bitsPerSecond,
+          mime: s.codec.mimeType,
+        ),
+    ]);
     return (
       qualities: buildQualityChoices(
+        // A video-only stream without a paired audio URL would play
+        // SILENT: never offer it; the muxed entries remain as the fallback.
+        hasAudio: audioUrl != null,
         muxed: [
           for (final s in manifest.muxed)
             (
@@ -175,14 +186,7 @@ class YoutubeService {
             ),
         ],
       ),
-      audioUrl: pickAudioUrl([
-        for (final s in manifest.audioOnly)
-          (
-            url: s.url.toString(),
-            bitrate: s.bitrate.bitsPerSecond,
-            mime: s.codec.mimeType,
-          ),
-      ]),
+      audioUrl: audioUrl,
     );
   }
 
@@ -193,10 +197,13 @@ class YoutubeService {
   static List<ZmixQualityOption> buildQualityChoices({
     required List<({String url, int height, int bitrate, String codec})> muxed,
     required List<({String url, int height, int bitrate, String codec})> videoOnly,
+    required bool hasAudio,
   }) {
     final byHeight = <int, ZmixQualityOption>{};
     int codecRank(String codec) => codec.startsWith('avc1') ? 0 : 1;
     for (final s in [...muxed.map((m) => (s: m, videoOnly: false)), ...videoOnly.map((v) => (s: v, videoOnly: true))]) {
+      // Guard: no paired audio -> drop video-only candidates entirely.
+      if (s.videoOnly && !hasAudio) continue;
       final candidate = ZmixQualityOption(
         url: s.s.url,
         quality: '${s.s.height}p',
