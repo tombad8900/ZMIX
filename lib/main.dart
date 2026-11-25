@@ -14,6 +14,10 @@ import 'storage.dart';
 /// --dart-define DEMO_SEED=true). Never enabled in release APKs.
 const bool kDemoSeed = bool.fromEnvironment('DEMO_SEED');
 
+/// Preview-only: auto-open the add-playlist sheet in a mid-import progress
+/// state for pixel verification. Never enabled in release APKs.
+const bool kDemoProgress = bool.fromEnvironment('DEMO_PROGRESS');
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // media_kit's native video backend has no web implementation in this build;
@@ -59,6 +63,23 @@ void _seedDemo(LibraryStore store) {
       ],
       addedAt: DateTime.now(),
     ),
+    if (kDemoProgress)
+      LibraryPlaylist(
+        id: 'demo3',
+        name: 'قائمة تجريبية كبيرة',
+        url: 'https://www.youtube.com/playlist?list=PLdemo3',
+        author: 'Demo Channel',
+        thumbUrl: ThumbnailSet('jNQXAC9IVRw').highResUrl,
+        videos: List.generate(
+          298,
+          (i) => demoVideo(
+              'dQw4w9WgXcQ', 'فيلم كلاسيكي رقم ${i + 1}', 5400 + i * 7),
+        ),
+        addedAt: DateTime.now(),
+        importComplete: false,
+        totalCountHint: 625,
+        importNote: 'short_of_declared',
+      ),
   ]);
 }
 

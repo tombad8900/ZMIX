@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import 'main.dart';
 import 'models.dart';
 import 'playlist_page.dart';
 import 'storage.dart';
@@ -17,6 +18,18 @@ class LibraryPage extends StatefulWidget {
 }
 
 class _LibraryPageState extends State<LibraryPage> {
+  @override
+  void initState() {
+    super.initState();
+    // Preview-only (kDemoProgress): open the add sheet in a simulated
+    // mid-import state for pixel verification of the progress UI.
+    if (kDemoProgress) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openAddSheet();
+      });
+    }
+  }
+
   Future<void> _openAddSheet() async {
     final added = await showModalBottomSheet<bool>(
       context: context,
@@ -86,10 +99,12 @@ class _LibraryPageState extends State<LibraryPage> {
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
                 sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    // Responsive: 2 columns on phones, more on wide screens,
+                    // and a card never grows taller than the viewport.
+                    maxCrossAxisExtent: 360,
                     mainAxisSpacing: 14,
                     crossAxisSpacing: 14,
                     childAspectRatio: 0.78,
@@ -349,9 +364,9 @@ class AddPlaylistSheet extends StatefulWidget {
 class _AddPlaylistSheetState extends State<AddPlaylistSheet> {
   final TextEditingController _urlController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
-  bool _busy = false;
+  bool _busy = kDemoProgress;
   bool _cancelRequested = false;
-  String? _status;
+  String? _status = kDemoProgress ? 'بنستورد... وصلنا لـ 148 فيديو' : null;
   String? _error;
 
   Future<void> _add() async {
