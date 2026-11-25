@@ -7,7 +7,7 @@ class SettingsPage extends StatelessWidget {
 
   final LibraryStore store;
 
-  static const String appVersion = '0.2.0';
+  static const String appVersion = '0.2.1';
 
   Future<void> _confirm(
     BuildContext context, {
