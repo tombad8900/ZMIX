@@ -219,7 +219,7 @@ class _AddPlaylistSheetState extends State<AddPlaylistSheet> {
         // Complete import with YouTube-hidden entries: honest counts.
         final parts = <String>[
           if (playlist.hiddenUntitledCount > 0)
-            '${playlist.hiddenUntitledCount} بلا عنوان (غالبًا محذوف أو خاص)',
+            '${playlist.hiddenUntitledCount} بلا عنوان عند يوتيوب (من غير سبب معلن)',
           if (playlist.hiddenTitledCount > 0)
             '${playlist.hiddenTitledCount} يوتيوب بيخفيهم من العرض الافتراضي',
         ];
@@ -475,26 +475,21 @@ class _VideoShelf extends StatelessWidget {
           final video = videos[i];
           return SizedBox(
             width: posterRowWidth(context),
-            child: Opacity(
-              opacity: video.isSourceUntitled
-                  ? 0.45
-                  : (video.visibility == 'hiddenTitled' ? 0.8 : 1),
-              child: PosterCard(
-                title: video.isSourceUntitled ? 'فيديو غير متاح' : video.title,
-                imageUrl: video.thumbUrl.isEmpty ? null : video.thumbUrl,
-                tags: [
-                  if (video.isSourceUntitled)
-                    'غير متاح'
-                  else if (video.visibility == 'hiddenTitled')
-                    'مخفي افتراضيًا',
-                  if (video.durationLabel.isNotEmpty) video.durationLabel,
-                ],
-                onTap: () => playLibraryVideo(
-                  context,
-                  store: store,
-                  playlist: playlist,
-                  video: video,
-                ),
+            child: PosterCard(
+              title: video.isSourceUntitled ? 'فيديو بلا عنوان' : video.title,
+              imageUrl: video.thumbUrl.isEmpty ? null : video.thumbUrl,
+              tags: [
+                if (video.isSourceUntitled)
+                  'بلا عنوان'
+                else if (video.visibility == 'hiddenTitled')
+                  'مخفي افتراضيًا',
+                if (video.durationLabel.isNotEmpty) video.durationLabel,
+              ],
+              onTap: () => playLibraryVideo(
+                context,
+                store: store,
+                playlist: playlist,
+                video: video,
               ),
             ),
           );

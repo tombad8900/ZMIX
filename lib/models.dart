@@ -15,13 +15,13 @@ class LibraryVideo {
   final String thumbUrl;
   final int? durationSeconds;
 
-  /// YouTube's own visibility for this entry, grounded in how the site
-  /// serves it: 'visible' (in the default playlist view), 'hiddenTitled'
-  /// (only served via YouTube's "show unavailable videos" view, but with a
-  /// real title/thumbnail - may or may not play; visibility alone does not
-  /// establish playability), or 'hiddenUntitled' (served with no title -
-  /// YouTube gives no reason; deleted or private in practice). Older saved
-  /// libraries have no value and count as 'visible'.
+  /// How YouTube itself serves this entry: 'visible' (in the default
+  /// playlist view), 'hiddenTitled' (only via YouTube's "show unavailable
+  /// videos" view, with a real title/thumbnail), or 'hiddenUntitled' (only
+  /// via that view, with NO title). YouTube gives no per-entry reason for
+  /// hidden entries, so neither hidden value establishes unavailability -
+  /// playability is only decided by an actual playback attempt.
+  /// Older saved libraries have no value and count as 'visible'.
   final String visibility;
 
   bool get isSourceUntitled => visibility == 'hiddenUntitled';
@@ -91,9 +91,10 @@ class LibraryPlaylist {
   final String? importNote;
 
   /// Entries only served through YouTube's "show unavailable videos" view.
-  /// [hiddenUntitledCount] came back with no title (deleted/private in
-  /// practice); [hiddenTitledCount] kept a real title but YouTube hides
-  /// them from the default view (playability unknown until attempted).
+  /// [hiddenUntitledCount] came back with no title (YouTube gives no
+  /// reason; treated as unknown-availability, not confirmed unavailable);
+  /// [hiddenTitledCount] kept a real title but is hidden from the default
+  /// view (playability unknown until attempted).
   final int hiddenUntitledCount;
   final int hiddenTitledCount;
 

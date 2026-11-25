@@ -18,17 +18,10 @@ Future<void> playLibraryVideo(
   required LibraryPlaylist playlist,
   required LibraryVideo video,
 }) async {
-  if (video.isSourceUntitled) {
-    // YouTube serves this entry with no title even in its own
-    // "show unavailable" view: deleted or private in practice, with no
-    // playable stream to resolve.
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text(
-              'الفيديو ده متعلّم عند يوتيوب كغير متاح (محذوف أو خاص) ومفيش له صيغة تشغيل.')),
-    );
-    return;
-  }
+  // Entries with missing metadata still get a normal playback attempt:
+  // YouTube supplies no per-entry reason marker for untitled entries, so
+  // absence of a title does not establish unavailability. If the stream
+  // truly cannot be resolved, the existing error path below says so.
   if (kIsWeb) {
     // The web preview has no media_kit backend; playback is Android-only.
     ScaffoldMessenger.of(context).showSnackBar(

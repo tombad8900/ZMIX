@@ -194,32 +194,30 @@ class _PlaylistPageState extends State<PlaylistPage> {
               (context, i) {
                 final video = videos[i];
                 final resolving = _resolvingId == video.id;
-                // YouTube-sourced visibility: untitled entries are shown
-                // dimmed with a fallback title; titled-but-hidden entries
-                // carry a small note tag. Positions are never reshuffled.
+                // YouTube-sourced visibility, labelled neutrally: untitled
+                // entries get a fallback title and a note tag (YouTube gives
+                // no reason, so nothing here claims unavailability);
+                // titled-but-hidden entries carry their own tag. Playback is
+                // attempted normally for both. Positions never reshuffle.
                 final untitled = video.isSourceUntitled;
                 final hiddenTitled = video.visibility == 'hiddenTitled';
                 return Stack(
                   children: [
                     Positioned.fill(
-                      child: Opacity(
-                        opacity: untitled ? 0.45 : (hiddenTitled ? 0.8 : 1),
-                        child: PosterCard(
-                          title:
-                              untitled ? 'فيديو غير متاح' : video.title,
-                          imageUrl:
-                              video.thumbUrl.isEmpty ? null : video.thumbUrl,
-                          tags: [
-                            if (untitled)
-                              'غير متاح'
-                            else if (hiddenTitled)
-                              'مخفي افتراضيًا',
-                            if (video.durationLabel.isNotEmpty)
-                              video.durationLabel,
-                          ],
-                          cellWidth: cellWidth,
-                          onTap: () => _play(video),
-                        ),
+                      child: PosterCard(
+                        title: untitled ? 'فيديو بلا عنوان' : video.title,
+                        imageUrl:
+                            video.thumbUrl.isEmpty ? null : video.thumbUrl,
+                        tags: [
+                          if (untitled)
+                            'بلا عنوان'
+                          else if (hiddenTitled)
+                            'مخفي افتراضيًا',
+                          if (video.durationLabel.isNotEmpty)
+                            video.durationLabel,
+                        ],
+                        cellWidth: cellWidth,
+                        onTap: () => _play(video),
                       ),
                     ),
                     if (resolving)

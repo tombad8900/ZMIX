@@ -24,8 +24,9 @@ class FetchResult {
   final String? stopReason;
 
   /// Entries only served through YouTube's "show unavailable videos" view:
-  /// [hiddenUntitled] came back with no title (deleted/private in practice),
-  /// [hiddenTitled] kept a title but is hidden from the default view.
+  /// [hiddenUntitled] came back with no title (YouTube gives no reason, so
+  /// this does not establish unavailability), [hiddenTitled] kept a title
+  /// but is hidden from the default view.
   final int hiddenUntitled;
   final int hiddenTitled;
 }
@@ -132,7 +133,8 @@ class PlaylistFetcher {
     // Classify each entry from YouTube's own serving behaviour: membership
     // in the default view means 'visible'; a hidden entry with a real title
     // is 'hiddenTitled' (playability unknown until attempted); a hidden
-    // entry with no title is 'hiddenUntitled' (deleted/private in practice).
+    // entry with no title is 'hiddenUntitled' (reason not given by YouTube;
+    // unknown availability, still playable on attempt).
     var hiddenUntitled = 0;
     var hiddenTitled = 0;
     final videos = <LibraryVideo>[];
@@ -226,9 +228,9 @@ class PlaylistFetcher {
     try {
       final metadata =
           lockup['metadata']?['lockupMetadataViewModel'] as Map<String, dynamic>?;
-      // Untitled entries are kept: YouTube serves deleted/private videos as
-      // lockups with a valid contentId and no title; the caller classifies
-      // them ('hiddenUntitled') instead of dropping them.
+      // Untitled entries are kept: YouTube serves some videos as lockups
+      // with a valid contentId and no title (reason not given); the caller
+      // classifies them ('hiddenUntitled') instead of dropping them.
       final title = metadata?['title']?['content'] as String? ?? '';
       final overlays = lockup['contentImage']?['thumbnailViewModel']?['overlays']
           as List<dynamic>?;
