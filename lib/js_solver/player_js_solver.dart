@@ -80,8 +80,18 @@ if (typeof globalThis.window === "undefined") { globalThis.window = globalThis; 
 
   /// Port of DEOBFUSCATION_FUNCTION_NAME_REGEXES[0]: the n-transform entry
   /// point is the function whose body contains `set("alr","yes")`.
+  /// ZMIX-EDIT: class widened from \w to [\w$] — NewPipe's \w* cannot
+  /// capture $-prefixed names, and the current player (b485e332, Nov 2026)
+  /// names its entry `$o`. Verified 2026-11-25: with \w the capture is the
+  /// undefined global `o`; with [\w$] the helper solves n-challenges,
+  /// byte-identical across QuickJS 2021-03-27 and V8.
+  /// ZMIX-EDIT: character class widened from \w to [\w$]: NewPipe's \w*
+  /// cannot capture $-prefixed names, and the current player (b485e332,
+  /// Nov 2026) names its entry `$o`. Verified live 2026-11-25: with \w the
+  /// capture is the undefined global `o`; with [\w$] the helper solves
+  /// n-challenges, byte-identical across QuickJS 2021-03-27 and V8.
   static final _nNamePattern =
-      RegExp(r'(\w*)=function\(.*\)\{.*set\("alr","yes"\);\w&&');
+      RegExp(r'([\w$]*)=function\(.*\)\{.*set\("alr","yes"\);\w&&');
 
   /// Array-indirection variant, ported from getDeobfuscationFunctionName:
   /// `NAME=function(...)` matched, with a second group selecting from a

@@ -27,6 +27,11 @@ void main() {
           'n8');
     });
 
+    test(r'captures \$-prefixed entry points (current player shape)', () {
+      const currentShape = r'\$o=function(a,b,c){a=new g.Xo(a,!0);a.set("alr","yes");c&&x(a)};';
+      expect(PlayerJsEnvironment.extractNFunctionName(currentShape), r'$o');
+    });
+
     test('returns null when no entry point exists', () {
       expect(PlayerJsEnvironment.extractNFunctionName('var a=1;'), isNull);
     });
