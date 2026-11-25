@@ -1,13 +1,16 @@
+import 'dart:io';
 import 'package:zmix/playlist_fetcher.dart';
 
-/// Manual probe: full live import of the user's two playlists.
+/// Manual probe: full live import of the given playlists.
 /// Run with: dart run tool/fetch_test.dart
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   final fetcher = PlaylistFetcher();
-  for (final id in [
-    'PL11111111111111111111111111111111',
-    'PL00000000000000000000000000000000',
-  ]) {
+  if (args.isEmpty) {
+    stderr.writeln('usage: dart run this tool <playlistId>...');
+    exitCode = 2;
+    return;
+  }
+  for (final id in args) {
     try {
       final sw = Stopwatch()..start();
       final result = await fetcher.fetchVideos(id);

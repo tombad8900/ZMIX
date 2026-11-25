@@ -1,13 +1,16 @@
+import 'dart:io';
 import 'package:zmix/grouper.dart';
 import 'package:zmix/playlist_fetcher.dart';
 
 /// What would the grouper do with the user's real playlists?
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   final fetcher = PlaylistFetcher();
-  for (final id in [
-    'PL11111111111111111111111111111111',
-    'PL00000000000000000000000000000000',
-  ]) {
+  if (args.isEmpty) {
+    stderr.writeln('usage: dart run this tool <playlistId>...');
+    exitCode = 2;
+    return;
+  }
+  for (final id in args) {
     final result = await fetcher.fetchVideos(id);
     final g = groupPlaylist(result.videos);
     print('$id: ${result.videos.length} entries -> '

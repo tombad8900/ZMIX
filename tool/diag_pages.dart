@@ -6,8 +6,13 @@ import 'package:http/http.dart' as http;
 /// Diagnostic: per-page breakdown of what YouTube's browse endpoint serves
 /// for a playlist - how many lockupViewModel entries, which contentTypes,
 /// how many our parser accepts, duplicates, and the continuation chain.
-Future<void> main() async {
-  const playlistId = 'PL00000000000000000000000000000000';
+Future<void> main(List<String> args) async {
+  if (args.isEmpty) {
+    stderr.writeln('usage: dart run tool/diag_pages.dart <playlistId>');
+    exitCode = 2;
+    return;
+  }
+  final playlistId = args.first;
   const extraParams = bool.hasEnvironment('PARAMS') ? String.fromEnvironment('PARAMS') : 'wgYCCAA=';
   final client = http.Client();
   final url = Uri.https(

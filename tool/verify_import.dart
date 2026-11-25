@@ -1,23 +1,33 @@
 // End-to-end production verification: real PlaylistFetcher against the user's
 // real playlist, then a LibraryPlaylist JSON persistence round-trip.
+import 'dart:io';
+
 import 'package:zmix/models.dart';
 import 'package:zmix/playlist_fetcher.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
+  // The playlist to verify is passed in (`dart run tool/verify_import.dart
+  // <playlistId>`); no real playlist id is recorded in the repo.
+  if (args.isEmpty) {
+    stderr.writeln('usage: dart run tool/verify_import.dart <playlistId>');
+    exitCode = 2;
+    return;
+  }
+  final playlistId = args.first;
   final fetcher = PlaylistFetcher();
-  final result = await fetcher.fetchVideos('PL00000000000000000000000000000000');
+  final result = await fetcher.fetchVideos(playlistId);
   fetcher.close();
 
   final playlist = LibraryPlaylist(
-    id: 'PL00000000000000000000000000000000',
+    id: playlistId,
     name: 'verify',
-    url: 'https://www.youtube.com/playlist?list=PL00000000000000000000000000000000',
+    url: 'https://www.youtube.com/playlist?list=\$playlistId',
     author: '',
     thumbUrl: '',
     videos: result.videos,
     addedAt: DateTime.now(),
     importComplete: result.complete,
-    totalCountHint: 625,
+    totalCountHint: result.videos.length,
     hiddenUntitledCount: result.hiddenUntitled,
     hiddenTitledCount: result.hiddenTitled,
   );

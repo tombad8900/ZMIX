@@ -3,10 +3,16 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-/// Does a different public InnerTube client context serve more of the
-/// declared-625 playlist than the WEB context's 298 entries?
-Future<void> main() async {
-  const playlistId = 'PL00000000000000000000000000000000';
+/// Does a different public InnerTube client context serve more of a
+/// playlist than the WEB context's default view?
+/// Run with: dart run tool/diag_client.dart <playlistId>
+Future<void> main(List<String> args) async {
+  if (args.isEmpty) {
+    stderr.writeln('usage: dart run tool/diag_client.dart <playlistId>');
+    exitCode = 2;
+    return;
+  }
+  final playlistId = args.first;
   final client = http.Client();
   final url = Uri.https(
       'www.youtube.com', '/youtubei/v1/browse', {'prettyPrint': 'false'});

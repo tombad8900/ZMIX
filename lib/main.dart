@@ -68,7 +68,7 @@ void _seedDemo(LibraryStore store) {
         id: 'demo3',
         name: 'قائمة تجريبية كبيرة',
         url: 'https://www.youtube.com/playlist?list=PLdemo3',
-        author: 'Demo Channel',
+        author: 'YouTube',
         thumbUrl: ThumbnailSet('jNQXAC9IVRw').highResUrl,
         // Mirrors the real 625-entry playlist's verified shape (2026-11-25):
         // 298 default-visible + 118 hidden-with-title + 209 untitled.
