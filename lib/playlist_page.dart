@@ -62,7 +62,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => PlayerPage(title: video.title, streamUrl: stream.url),
+          builder: (_) => PlayerPage(
+            title: video.title,
+            streamUrl: stream.url,
+            qualityLabel: stream.quality,
+          ),
         ),
       );
     } catch (_) {

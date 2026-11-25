@@ -35,7 +35,11 @@ class _HistoryPageState extends State<HistoryPage> {
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => PlayerPage(title: entry.title, streamUrl: stream.url),
+          builder: (_) => PlayerPage(
+            title: entry.title,
+            streamUrl: stream.url,
+            qualityLabel: stream.quality,
+          ),
         ),
       );
     } catch (_) {

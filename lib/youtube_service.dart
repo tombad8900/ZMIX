@@ -51,7 +51,13 @@ class YoutubeService {
       throw const FormatException('مفيش صيغة تشغيل مدمجة متاحة للفيديو ده');
     }
     final stream = manifest.muxed.withHighestBitrate();
-    return (url: stream.url.toString(), quality: stream.videoQuality.name);
+    return (url: stream.url.toString(), quality: _qualityLabel(stream.videoQuality.name));
+  }
+
+  /// 'medium360' -> '360p'
+  static String _qualityLabel(String raw) {
+    final match = RegExp(r'(\d+)').firstMatch(raw);
+    return match == null ? raw : '${match.group(1)}p';
   }
 
   void close() => _yt.close();
