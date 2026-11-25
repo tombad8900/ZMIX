@@ -24,11 +24,25 @@ Future<void> loadGoldenFonts() async {
           bytes('$root/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf'));
     await icons.load();
     // Naskh carries Arabic + digits but no Latin letters; on device the OS
-    // falls back to Roboto, so mirror that chain in goldens.
-    final roboto = FontLoader('Roboto')
-      ..addFont(
-          bytes('$root/bin/cache/artifacts/material_fonts/Roboto-Regular.ttf'));
+    // falls back to Roboto, so mirror that chain in goldens. The ported
+    // AppText styles carry their OWN fallback chain ending in 'sans-serif'
+    // (an explicit style fallback overrides the theme's), which Android
+    // resolves to Roboto - so register Roboto under that alias too, or
+    // Latin letters and some punctuation in overlay captions render tofu
+    // here while rendering fine on device.
+    final robotoPath =
+        '$root/bin/cache/artifacts/material_fonts/Roboto-Regular.ttf';
+    final roboto = FontLoader('Roboto')..addFont(bytes(robotoPath));
     await roboto.load();
+    final sansSerif = FontLoader('sans-serif')..addFont(bytes(robotoPath));
+    await sansSerif.load();
+    // In the test engine the generic 'sans-serif' name resolves to the Ahem
+    // placeholder before custom registrations, so the FIRST family in
+    // AppText's chain that we control must carry Latin: register Roboto
+    // under 'Hiragino Sans' (which on a real device carries the Latin the
+    // chain is for anyway).
+    final hiragino = FontLoader('Hiragino Sans')..addFont(bytes(robotoPath));
+    await hiragino.load();
   }
 }
 

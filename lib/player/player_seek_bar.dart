@@ -16,7 +16,7 @@ class PlayerSeekBar extends StatefulWidget {
     this.trailing,
   });
 
-  final Player player;
+  final ZmixPlayerSurface player; // ZMIX-EDIT
   final void Function(Duration position) onSeek;
   final Duration duration;
   final VoidCallback onInteract;
@@ -42,8 +42,7 @@ class _SeekRowState extends State<PlayerSeekBar> {
   // and scrubbing stays perfectly smooth because it runs off _dragMs, not this.
   late final Stream<Duration> _livePosition = widget
       .player
-      .stream
-      .position
+      .positionStream
       .map((p) => Duration(milliseconds: (p.inMilliseconds ~/ 250) * 250))
       .distinct();
 
@@ -158,7 +157,7 @@ class _SeekRowState extends State<PlayerSeekBar> {
                         SizedBox(
                           width: w,
                           child: StreamBuilder<Duration>(
-                            stream: widget.player.stream.buffer,
+                            stream: widget.player.bufferStream,
                             builder: (context, bufSnap) {
                               final bufMs = (bufSnap.data ?? Duration.zero)
                                   .inMilliseconds;

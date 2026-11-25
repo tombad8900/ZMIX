@@ -8,14 +8,18 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
 import 'models.dart';
+import 'player/player_controls_config.dart';
+import 'player/player_controls_overlay.dart';
 import 'player_chrome.dart';
+import 'player_hud.dart';
 import 'storage.dart';
 import 'youtube_service.dart';
 
-/// ZMIX custom player. Overlay architecture adapted from Zangetsu (GPL-3.0,
-/// see player_chrome.dart): two-line title bar with lock, centre transport
-/// with previous/next, seek row with remaining-time toggle, capsule button
-/// bar with speed / quality / fit. Playback on media_kit.
+/// ZMIX custom player. The controls overlay is a literal port of Zangetsu's
+/// PlayerControlsOverlay + PlayerSeekBar + widgets (GPL-3.0, lib/player/),
+/// wired to media_kit through [MediaKitPlayerSurface]; ZMIX-specific extras
+/// (double-tap seek indicator, brightness/volume HUD, 2x boost badge, lock
+/// overlay, error panel) live in player_hud.dart. Playback on media_kit.
 class PlayerPage extends StatefulWidget {
   const PlayerPage({
     super.key,
@@ -152,6 +156,13 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     if (_locked) return;
     setState(() => _controlsVisible = !_controlsVisible);
     if (_controlsVisible) _scheduleHide();
+  }
+
+  /// Upstream's _bumpControls: any interaction with the overlay shows the
+  /// controls again and restarts the auto-hide countdown.
+  void _bumpControls() {
+    if (!_controlsVisible) setState(() => _controlsVisible = true);
+    _scheduleHide();
   }
 
   void _toggleLock() {
@@ -396,7 +407,18 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       if (_scrubPosition < Duration.zero) _scrubPosition = Duration.zero;
       if (_scrubPosition > duration) _scrubPosition = duration;
     });
+    // The ported seek bar renders the live position stream, so the
+    // drag-anywhere scrub seeks live (throttled) instead of drawing a
+    // preview value of its own.
+    final now = DateTime.now();
+    if (_lastLiveSeek == null ||
+        now.difference(_lastLiveSeek!) > const Duration(milliseconds: 150)) {
+      _lastLiveSeek = now;
+      _player.seek(_scrubPosition);
+    }
   }
+
+  DateTime? _lastLiveSeek;
 
   Future<void> _endScrub(DragEndDetails _) async {
     final target = _scrubPosition;
@@ -456,6 +478,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     final siblings = widget.siblings;
     final hasPrev = siblings != null && _index > 0;
     final hasNext = siblings != null && _index < siblings.length - 1;
+    final multiEpisode = siblings != null && siblings.length > 1;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Listener(
@@ -481,81 +504,70 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
               ),
             ),
           if (!_locked) _gestureLayer(),
-          StreamBuilder<Duration>(
-            stream: _player.stream.position,
-            initialData: _player.state.position,
-            builder: (context, posSnap) {
-              return StreamBuilder<bool>(
-                stream: _player.stream.playing,
-                initialData: _player.state.playing,
-                builder: (context, playSnap) {
-                  return StreamBuilder<bool>(
-                    stream: _player.stream.buffering,
-                    initialData: _player.state.buffering,
-                    builder: (context, bufSnap) {
-                      return PlayerChrome(
-                        title: _title,
-                        secondaryText: _currentQuality,
-                        position: _scrubbing
-                            ? _scrubPosition
-                            : (posSnap.data ?? Duration.zero),
-                        duration: _player.state.duration,
-                        playing: playSnap.data ?? false,
-                        buffering: bufSnap.data ?? false,
-                        rate: _rate,
-                        controlsVisible: _controlsVisible,
-                        locked: _locked,
-                        fitLabel: kPlayerFits[_fitIndex].$2,
-                        hasPrev: hasPrev,
-                        hasNext: hasNext,
-                        seekDelta: _seekDelta,
-                        seekForward: _seekForward,
-                        hudVisible: _hudVisible,
-                        hudIsBrightness: _hudIsBrightness,
-                        hudValue: _hudValue,
-                        boosting: _boosting,
-                        errorText: _error,
-                        onBack: () => Navigator.of(context).pop(),
-                        onRetry: _retry,
-                        onPlayPause: () {
-                          _player.playOrPause();
-                          _scheduleHide();
-                        },
-                        onPrev: hasPrev ? () => _goToSibling(-1) : null,
-                        onNext: hasNext ? () => _goToSibling(1) : null,
-                        onCycleSpeed: _cycleSpeed,
-                        onQuality:
-                            _qualities.length > 1 ? _openQualitySheet : null,
-                        onCycleFit: _cycleFit,
-                        onToggleLock: _toggleLock,
-                        onScrubChanged: (v) {
-                          _hideTimer?.cancel();
-                          setState(() {
-                            _scrubbing = true;
-                            _scrubPosition = Duration(
-                              milliseconds: (v *
-                                      _player.state.duration.inMilliseconds)
-                                  .round(),
-                            );
-                          });
-                        },
-                        onScrubEnd: (v) {
-                          final target = Duration(
-                            milliseconds:
-                                (v * _player.state.duration.inMilliseconds)
-                                    .round(),
-                          );
-                          setState(() => _scrubbing = false);
-                          _player.seek(target);
-                          _scheduleHide();
-                        },
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          ),
+          // Literal Zangetsu controls overlay (lib/player/), mounted exactly
+          // as upstream's player_screen mounts it: only when unlocked, under
+          // AnimatedOpacity + IgnorePointer gated on controls visibility.
+          if (!_locked)
+            AnimatedOpacity(
+              opacity: _controlsVisible ? 1 : 0,
+              duration: Duration(
+                milliseconds: _controlsVisible ? 160 : 240,
+              ),
+              curve: Curves.easeOutCubic,
+              child: IgnorePointer(
+                ignoring: !_controlsVisible,
+                child: PlayerControlsOverlay(
+                  player: MediaKitPlayerSurface(_player),
+                  episodeNumber: _index + 1,
+                  episodeTitle: _title,
+                  multiEpisode: multiEpisode,
+                  hasNext: hasNext,
+                  hasQualityChoices: _qualities.length > 1,
+                  activeQualityLabel: _currentQuality,
+                  onTogglePlay: () {
+                    _player.playOrPause();
+                    _scheduleHide();
+                  },
+                  onSeek: (pos) {
+                    _player.seek(pos);
+                    _scheduleHide();
+                  },
+                  onNext: hasNext ? () => _goToSibling(1) : null,
+                  onPrev: hasPrev ? () => _goToSibling(-1) : null,
+                  showTitle: widget.playlistName,
+                  duration: _player.state.duration,
+                  onDurationChanged: (_) {},
+                  onInteract: _bumpControls,
+                  onBack: () => Navigator.of(context).pop(),
+                  onSpeed: _cycleSpeed,
+                  onQuality: _qualities.length > 1 ? _openQualitySheet : null,
+                  onLock: _toggleLock,
+                  // ZMIX is landscape-locked (see initState): the
+                  // portrait/landscape flip does not apply, so upstream's
+                  // own null-skip drops the rotate button.
+                  onRotate: null,
+                  portraitMode: false,
+                  barConfig: PlayerControlsConfig.defaults,
+                  onZoom: _cycleFit,
+                  zoomLabel: kPlayerFits[_fitIndex].$2,
+                  showQuality: true,
+                  visible: _controlsVisible,
+                ),
+              ),
+            ),
+          // ZMIX-specific extras with no upstream counterpart (player_hud.dart).
+          if (_seekDelta != 0 && !_locked)
+            SeekIndicator(delta: _seekDelta, forward: _seekForward),
+          if (_hudVisible && !_locked)
+            PlayerHud(isBrightness: _hudIsBrightness, value: _hudValue),
+          if (_boosting && !_locked) const BoostBadge(),
+          if (_locked) LockOverlay(onUnlock: _toggleLock),
+          if (_error != null && !_locked)
+            PlayerErrorPanel(
+              errorText: _error!,
+              onBack: () => Navigator.of(context).pop(),
+              onRetry: _retry,
+            ),
           ],
         ),
       ),

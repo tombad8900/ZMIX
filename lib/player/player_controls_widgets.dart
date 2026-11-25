@@ -219,9 +219,11 @@ Widget _withTooltip(
 
 /// Aspect-mode icon. The fit button dropped its text label to keep every
 /// button the same width, so the icon has to carry which mode you're on.
+// ZMIX-EDIT: ZMIX's fit labels are Arabic (kPlayerFits in
+// lib/player_chrome.dart): ملاءمة (contain) / توسيع (cover) / تمديد (fill).
 IconData _fitIcon(String label) => switch (label) {
-  'Fill' => Icons.crop_free_rounded,
-  'Stretch' => Icons.open_in_full_rounded,
+  'توسيع' => Icons.crop_free_rounded,
+  'تمديد' => Icons.open_in_full_rounded,
   _ => Icons.fit_screen_rounded,
 };
 

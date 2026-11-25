@@ -23,6 +23,70 @@ import 'player_controls_config.dart';
 part 'player_controls_widgets.dart';
 part 'player_seek_bar.dart';
 
+/// ZMIX-EDIT: the playback-engine surface the overlay needs. Upstream this
+/// was PlayerCubit around media_kit; ZMIX wires media_kit's Player through
+/// [MediaKitPlayerSurface], and widget tests substitute a fake (a real
+/// media_kit Player needs native libmpv and cannot exist in a VM test).
+/// Only the members the ported code actually reads are exposed.
+abstract class ZmixPlayerSurface {
+  ZmixPlayerSnapshot get state;
+  Stream<Duration> get positionStream;
+  Stream<Duration> get bufferStream;
+  Stream<Duration> get durationStream;
+  Stream<int?> get widthStream;
+  Stream<bool> get bufferingStream;
+  Stream<bool> get playingStream;
+}
+
+/// Immutable view of the engine state fields the ported code reads.
+class ZmixPlayerSnapshot {
+  const ZmixPlayerSnapshot({
+    this.position = Duration.zero,
+    this.duration = Duration.zero,
+    this.buffering = false,
+    this.playing = false,
+    this.width,
+    this.height,
+  });
+
+  final Duration position;
+  final Duration duration;
+  final bool buffering;
+  final bool playing;
+  final int? width;
+  final int? height;
+}
+
+/// Live media_kit-backed surface used by the real player page.
+class MediaKitPlayerSurface implements ZmixPlayerSurface {
+  MediaKitPlayerSurface(this.player);
+
+  final Player player;
+
+  @override
+  ZmixPlayerSnapshot get state => ZmixPlayerSnapshot(
+        position: player.state.position,
+        duration: player.state.duration,
+        buffering: player.state.buffering,
+        playing: player.state.playing,
+        width: player.state.width,
+        height: player.state.height,
+      );
+
+  @override
+  Stream<Duration> get positionStream => player.stream.position;
+  @override
+  Stream<Duration> get bufferStream => player.stream.buffer;
+  @override
+  Stream<Duration> get durationStream => player.stream.duration;
+  @override
+  Stream<int?> get widthStream => player.stream.width;
+  @override
+  Stream<bool> get bufferingStream => player.stream.buffering;
+  @override
+  Stream<bool> get playingStream => player.stream.playing;
+}
+
 class PlayerControlsOverlay extends StatelessWidget {
   const PlayerControlsOverlay({
     super.key,
@@ -54,7 +118,7 @@ class PlayerControlsOverlay extends StatelessWidget {
     this.visible = true,
   });
 
-  final Player player; // ZMIX-EDIT
+  final ZmixPlayerSurface player; // ZMIX-EDIT
   final int episodeNumber; // ZMIX-EDIT
   final String episodeTitle; // ZMIX-EDIT
   final bool multiEpisode; // ZMIX-EDIT
@@ -209,7 +273,11 @@ class PlayerControlsOverlay extends StatelessWidget {
         if (!hasQualityChoices || onQuality == null) return null;
         return (Icons.high_quality_rounded, 'الجودة', onQuality!);
       case 'more':
-        return (Icons.more_vert_rounded, 'المزيد', () => _showMore(context));
+        // ZMIX-EDIT: the More panel has no rows yet (every upstream row
+        // targets a feature ZMIX does not have), so the button that would
+        // open an empty panel drops out instead. Restore this spec the day
+        // a real row lands in _showMore.
+        return null;
       case 'fit':
         if (onZoom == null) return null;
         return (_fitIcon(zoomLabel), 'نسبة العرض · $zoomLabel', onZoom!);
@@ -448,11 +516,11 @@ class PlayerControlsOverlay extends StatelessWidget {
                 const SizedBox(width: 24),
               ],
               StreamBuilder<int?>(
-                stream: player.stream.width, // ZMIX-EDIT
+                stream: player.widthStream, // ZMIX-EDIT
                 initialData: player.state.width,
                 builder: (context, frame) {
                   return StreamBuilder<bool>(
-                    stream: player.stream.buffering,
+                    stream: player.bufferingStream,
                     builder: (context, bSnap) {
                       final buffering = bSnap.data ?? player.state.buffering;
                       // While buffering, show the spinner IN PLACE OF the play/pause
@@ -479,7 +547,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                         );
                       }
                       return StreamBuilder<bool>(
-                        stream: player.stream.playing,
+                        stream: player.playingStream,
                         builder: (context, snap) {
                           final playing = snap.data ?? player.state.playing;
                           return _AnimatedPlayPause(
@@ -541,7 +609,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                   children: [
                     // Duration tracker (off-screen listener via StreamBuilder).
                     StreamBuilder<Duration>(
-                      stream: player.stream.duration, // ZMIX-EDIT
+                      stream: player.durationStream, // ZMIX-EDIT
                       initialData: player.state.duration,
                       builder: (context, snap) {
                         final d = snap.data ?? duration;
@@ -634,7 +702,7 @@ class PlayerControlsOverlay extends StatelessWidget {
 class _ShowAfterFirstFrame extends StatefulWidget {
   const _ShowAfterFirstFrame({required this.player, required this.child});
 
-  final Player player; // ZMIX-EDIT
+  final ZmixPlayerSurface player; // ZMIX-EDIT
   final Widget child;
 
   @override
@@ -657,10 +725,10 @@ class _ShowAfterFirstFrameState extends State<_ShowAfterFirstFrame> {
   @override
   void initState() {
     super.initState();
-    final s = widget.player.stream;
     _subs
-      ..add(s.width.listen((_) => _check()))
-      ..add(s.playing.listen((_) => _check()));
+      // ZMIX-EDIT: surface getters (was media_kit's player.stream).
+      ..add(widget.player.widthStream.listen((_) => _check()))
+      ..add(widget.player.playingStream.listen((_) => _check()));
   }
 
   @override
