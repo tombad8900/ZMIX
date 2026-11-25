@@ -118,6 +118,7 @@ class PlayerControlsOverlay extends StatelessWidget {
     this.visible = true,
     this.transportHidden = false, // ZMIX-EDIT
     this.onEpisodes, // ZMIX-EDIT
+    this.onSubtitles, // ZMIX-EDIT
   });
 
   final ZmixPlayerSurface player; // ZMIX-EDIT
@@ -162,6 +163,11 @@ class PlayerControlsOverlay extends StatelessWidget {
   /// the cubit's episode list; ZMIX feeds it from the playlist siblings).
   /// Null = single item, button drops out.
   final VoidCallback? onEpisodes;
+
+  /// ZMIX-EDIT: opens the subtitle picker (upstream's 'tracks' id fed its
+  /// AudioSubsSheet from the cubit; ZMIX feeds it from YouTube caption
+  /// tracks). Null = the video lists no captions, button drops out.
+  final VoidCallback? onSubtitles;
 
   /// Overflow panel that slides in from the RIGHT (like the episodes panel) —
   /// holds the occasional actions so the control bars stay clean.
@@ -271,7 +277,7 @@ class PlayerControlsOverlay extends StatelessWidget {
   /// (no second quality to pick, a single-episode item, no PiP support).
   (IconData, String, VoidCallback)? _specFor(BuildContext context, String id) {
     // ZMIX-EDIT: only the controls ZMIX's YouTube player can act on resolve.
-    // Unsupported ids (tracks/sources/episodes/decoder/enhance/colour/
+    // Unsupported ids (sources/decoder/enhance/colour/
     // snapshot/sleep/pip/...) fall through to null - upstream's own
     // mechanism for "not available right now", so a saved layout naming
     // them simply skips them. Labels are inline Arabic (was l10n).
@@ -289,6 +295,12 @@ class PlayerControlsOverlay extends StatelessWidget {
         // upstream's own rule stands: one-off items get no episodes button.
         if (onEpisodes == null) return null;
         return (Icons.video_library_outlined, 'الحلقات', onEpisodes!);
+      case 'tracks':
+        // ZMIX-EDIT: subtitles now exist (YouTube caption tracks via
+        // youtube_explode -> SRT -> media_kit's external subtitle loader).
+        // No captions on the video -> no button, per upstream's own rule.
+        if (onSubtitles == null) return null;
+        return (Icons.subtitles_rounded, 'الترجمة', onSubtitles!);
       case 'more':
         // ZMIX-EDIT: the More panel has no rows yet (every upstream row
         // targets a feature ZMIX does not have), so the button that would

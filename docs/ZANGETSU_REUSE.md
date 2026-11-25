@@ -72,12 +72,21 @@ Material upstream omissions (features ZMIX does not have; they take nullable
 callbacks / fall through upstream's null-skip rather than pretending):
 cast, decoder switch, enhance, colour profiles, snapshot, sleep timer, PiP,
 minimize, engine switch, ambient mode, room chat, info panel,
-sources, subtitle/audio tracks, MegaSkip pill, settings shortcut,
+sources, audio tracks, MegaSkip pill, settings shortcut,
 Jikan filler badge, scrub storyboard previews, the TV controls variant, and
 upstream's speed/sleep/settings sheets (ZMIX keeps its own speed cycling;
 rotate is dropped because ZMIX is landscape-locked). The 'more' overflow
 panel is ported but has no rows yet, so its button drops out until one
-exists. Dormant upstream elements carried with the literal copy and not
+exists.
+
+Subtitles: NOT an upstream port. ZMIX's path is YouTube caption tracks via
+youtube_explode's ClosedCaptionClient -> SRT (lib/subtitles.dart, pure and
+unit-tested) -> media_kit's external SubtitleTrack.data loader. The picker
+(`SubtitleListSheet` in lib/player_chrome.dart) is ZMIX's own sheet in the
+shape of the QualityListSheet; upstream's AudioSubsSheet is bound to its
+PlayerController, addon-subtitle search and MPV track ids and does not
+port. The overlay's upstream 'tracks' id now resolves to this picker and
+drops out when YouTube lists no captions for the playing video. Dormant upstream elements carried with the literal copy and not
 currently rendered: `_showMore`, `_placedAnywhere`, `_MegaSkipPill`,
 `_RoundIconButton`, `_MoreRow` (analyzer documents them as unused elements).
 
