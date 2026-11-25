@@ -5,6 +5,7 @@ import 'package:zmix/models.dart';
 import 'package:zmix/playlist_page.dart';
 import 'package:zmix/storage.dart';
 
+import 'fixture_artwork.dart';
 import 'golden_fonts.dart';
 
 /// Every title below is invented fixture content (no real playlist data),
@@ -12,8 +13,12 @@ import 'golden_fonts.dart';
 /// ungrouped films, one very long Arabic title, and one ambiguous
 /// multi-marker title that must stay ungrouped.
 LibraryPlaylist _fixturePlaylist() {
-  LibraryVideo v(String id, String title, [int? secs]) =>
-      LibraryVideo(id: id, title: title, thumbUrl: '', durationSeconds: secs);
+  var i = 0;
+  LibraryVideo v(String id, String title, [int? secs]) => LibraryVideo(
+      id: id,
+      title: title,
+      thumbUrl: artUrl(['a', 'b', 'c'][i++ % 3]),
+      durationSeconds: secs);
   return LibraryPlaylist(
     id: 'fixture1',
     name: 'مكتبة تجريبية (بيانات وهمية)',
@@ -40,7 +45,10 @@ LibraryPlaylist _fixturePlaylist() {
 }
 
 void main() {
-  setUpAll(loadGoldenFonts);
+  setUpAll(() async {
+    installFixtureArtwork();
+    await loadGoldenFonts();
+  });
 
   // Logical 390x844 portrait phone surface; physicalSize is in physical
   // pixels, so double it at devicePixelRatio 2.
@@ -54,6 +62,10 @@ void main() {
       goldenHost(PlaylistPage(playlist: _fixturePlaylist(), store: LibraryStore())),
     );
     await tester.pump(const Duration(milliseconds: 100));
+    // Let the fixture artwork codec finish so cards render real images.
+    await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 300)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
   }
 
   testWidgets('grouping UI: series sections top', (tester) async {

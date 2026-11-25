@@ -166,6 +166,82 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     _scheduleHide();
   }
 
+  // ── Pinch-to-zoom (ported from Zangetsu player_screen.dart, GPL-3.0) ────
+  // Raw-pointer driven so it never fights the 1-finger gestures. Two fingers
+  // down -> start; their spread sets the zoom and their midpoint pans;
+  // releasing a finger ends it (snapping back to fit when near 1x).
+  double _zoom = 1.0;
+  Offset _zoomPan = Offset.zero;
+  bool _pinching = false;
+  final Map<int, Offset> _pointers = {};
+  double _pinchBaseDist = 0;
+  double _pinchBaseZoom = 1.0;
+  Offset _pinchBaseFocal = Offset.zero;
+  Offset _pinchBasePan = Offset.zero;
+
+  void _onPointerDown(PointerDownEvent e) {
+    _pointers[e.pointer] = e.position;
+    if (_pointers.length == 2 && !_locked) _startPinch();
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    if (!_pointers.containsKey(e.pointer)) return;
+    _pointers[e.pointer] = e.position;
+    if (_pinching && _pointers.length >= 2) _updatePinch();
+  }
+
+  void _onPointerUp(PointerEvent e) {
+    _pointers.remove(e.pointer);
+    if (_pointers.length < 2 && _pinching) _endPinch();
+  }
+
+  void _startPinch() {
+    final p = _pointers.values.toList();
+    _pinchBaseDist = (p[0] - p[1]).distance;
+    _pinchBaseFocal = Offset((p[0].dx + p[1].dx) / 2, (p[0].dy + p[1].dy) / 2);
+    _pinchBaseZoom = _zoom;
+    _pinchBasePan = _zoomPan;
+    setState(() {
+      _pinching = true;
+      _scrubbing = false; // cancel any 1-finger scrub the first finger started
+      _hudVisible = false; // and any brightness/volume HUD
+    });
+  }
+
+  void _updatePinch() {
+    if (_pinchBaseDist <= 0) return;
+    final p = _pointers.values.toList();
+    final dist = (p[0] - p[1]).distance;
+    final focal = Offset((p[0].dx + p[1].dx) / 2, (p[0].dy + p[1].dy) / 2);
+    final z = (_pinchBaseZoom * dist / _pinchBaseDist).clamp(1.0, 4.0);
+    setState(() {
+      _zoom = z;
+      _zoomPan = _clampPan(_pinchBasePan + (focal - _pinchBaseFocal), z);
+    });
+  }
+
+  void _endPinch() {
+    setState(() {
+      _pinching = false;
+      if (_zoom < 1.08) {
+        // pinched back near fit -> snap cleanly to 1x and recentre
+        _zoom = 1.0;
+        _zoomPan = Offset.zero;
+      }
+    });
+  }
+
+  /// Keep the panned, zoomed video from sliding past its own edges.
+  Offset _clampPan(Offset pan, double zoom) {
+    final size = MediaQuery.of(context).size;
+    final maxX = (zoom - 1) * size.width / 2;
+    final maxY = (zoom - 1) * size.height / 2;
+    return Offset(
+      pan.dx.clamp(-maxX, maxX).toDouble(),
+      pan.dy.clamp(-maxY, maxY).toDouble(),
+    );
+  }
+
   // ── Quality ────────────────────────────────────────────────────────────
 
   void _openQualitySheet() {
@@ -235,6 +311,8 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         _currentQuality = stream.quality;
         _error = null;
         _qualities = [];
+        _zoom = 1.0;
+        _zoomPan = Offset.zero;
       });
       await _player.open(Media(stream.url), play: true);
       _loadQualities();
@@ -366,16 +444,28 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     final hasNext = siblings != null && _index < siblings.length - 1;
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Center(
-            child: Video(
-              controller: _controller,
-              controls: NoVideoControls,
-              fit: kPlayerFits[_fitIndex].$1,
+      body: Listener(
+        onPointerDown: _onPointerDown,
+        onPointerMove: _onPointerMove,
+        onPointerUp: _onPointerUp,
+        onPointerCancel: _onPointerUp,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Center(
+              // Zoomed/panned exactly as upstream: translate then scale.
+              child: Transform.translate(
+                offset: _zoomPan,
+                child: Transform.scale(
+                  scale: _zoom,
+                  child: Video(
+                    controller: _controller,
+                    controls: NoVideoControls,
+                    fit: kPlayerFits[_fitIndex].$1,
+                  ),
+                ),
+              ),
             ),
-          ),
           if (!_locked) _gestureLayer(),
           StreamBuilder<Duration>(
             stream: _player.stream.position,
@@ -451,7 +541,8 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
               );
             },
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

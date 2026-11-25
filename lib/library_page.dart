@@ -319,6 +319,81 @@ class _SectionHeader extends StatelessWidget {
   final LibraryPlaylist playlist;
   final LibraryStore store;
 
+  /// Rename/delete actions, carried over verbatim from the old playlist card.
+  Future<void> _onLongPress(BuildContext context) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF16161C),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('تغيير الاسم'),
+              onTap: () => Navigator.pop(sheetContext, 'rename'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              title: const Text('حذف من المكتبة',
+                  style: TextStyle(color: Colors.redAccent)),
+              onTap: () => Navigator.pop(sheetContext, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (action == 'delete') {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('حذف القائمة؟'),
+          content: const Text(
+              'القائمة هتتشال من المكتبة. سجل المشاهدة هيفضل زي ما هو.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('حذف'),
+            ),
+          ],
+        ),
+      );
+      if (ok == true) await store.removePlaylist(playlist.id);
+    } else if (action == 'rename') {
+      final controller = TextEditingController(text: playlist.name);
+      final newName = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('اسم القائمة'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'اكتب الاسم الجديد'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, controller.text),
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      );
+      if (newName != null) await store.renamePlaylist(playlist.id, newName);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -327,6 +402,7 @@ class _SectionHeader extends StatelessWidget {
           builder: (_) => PlaylistPage(playlist: playlist, store: store),
         ),
       ),
+      onLongPress: () => _onLongPress(context),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 18, 8, 8),
         child: Row(

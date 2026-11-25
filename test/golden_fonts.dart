@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 
 /// Loads the same fonts the real app renders with, so golden pixels carry
@@ -35,6 +36,14 @@ Future<void> loadGoldenFonts() async {
 Widget goldenHost(Widget child) {
   return MaterialApp(
     debugShowCheckedModeBanner: false,
+    // Mirror production Directionality: Arabic locale + delegates give RTL.
+    locale: const Locale('ar'),
+    supportedLocales: const [Locale('ar'), Locale('en')],
+    localizationsDelegates: const [
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
     theme: ThemeData(
       brightness: Brightness.dark,
       scaffoldBackgroundColor: const Color(0xFF0B0B0F),

@@ -43,6 +43,10 @@ class PosterCard extends StatefulWidget {
   });
   final String title;
   final String? imageUrl;
+
+  /// Test seam: when set (golden/widget tests only), artwork is decoded from
+  /// this provider instead of the network so renders carry real images.
+  static ImageProvider Function(String url)? debugImageProvider;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
@@ -131,6 +135,15 @@ class _PosterCardState extends State<PosterCard> {
       ],
     );
     Widget networkArtwork(String url) {
+      final debugProvider = PosterCard.debugImageProvider;
+      if (debugProvider != null) {
+        return Image(
+          image: ResizeImage(debugProvider(url), width: memW),
+          fit: artFit,
+          errorBuilder: (_, _, _) =>
+              const ColoredBox(color: Color(0xFF20212A)),
+        );
+      }
       return CachedNetworkImage(
         imageUrl: url,
         memCacheWidth: memW,

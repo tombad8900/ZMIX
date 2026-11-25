@@ -5,6 +5,7 @@ import 'package:zmix/library_page.dart';
 import 'package:zmix/models.dart';
 import 'package:zmix/storage.dart';
 
+import 'fixture_artwork.dart';
 import 'golden_fonts.dart';
 
 /// Invented fixture content (no real playlist data): two playlists, enough
@@ -22,7 +23,7 @@ LibraryPlaylist _playlist(String id, String name, int count) {
         LibraryVideo(
           id: '$id-$i',
           title: '$name - الحلقة $i',
-          thumbUrl: '',
+          thumbUrl: artUrl(i.isOdd ? 'a' : 'b'),
           durationSeconds: 2400 + i * 7,
         ),
     ],
@@ -30,7 +31,10 @@ LibraryPlaylist _playlist(String id, String name, int count) {
 }
 
 void main() {
-  setUpAll(loadGoldenFonts);
+  setUpAll(() async {
+    installFixtureArtwork();
+    await loadGoldenFonts();
+  });
 
   const surface = Size(780, 1688); // logical 390x844 at dpr 2
 
@@ -46,6 +50,10 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(goldenHost(LibraryPage(store: store)));
     await tester.pump(const Duration(milliseconds: 100));
+    // Let the fixture artwork codec finish so cards render real images.
+    await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 300)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
 
     // Section headers: name, count, chevron affordance.
     expect(find.text('المؤسس عثمان'), findsOneWidget);
@@ -54,7 +62,7 @@ void main() {
     // Shelf cards carry titles below the art and duration badges.
     expect(find.text('المؤسس عثمان - الحلقة 1'), findsOneWidget);
     expect(find.text('40:07'), findsWidgets);
-    // Old giant playlist cards are gone: no card shows the playlist thumb.
+    // Cards render real fixture artwork (gradient posters), not placeholders.
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/library_home_shelves.png'),
