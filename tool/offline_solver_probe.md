@@ -68,7 +68,9 @@ playback/account/manifest requests, no throttling observed.
   engine-identical, invoked via the player's own URL class); no committed
   ground-truth vectors exist for b485e332, and ejs 0.8.0 fails on it even
   on V8 (addOnDisposeCallback shim gap).
-- SIGNATURE: all six NewPipe sig call-site regexes fail on b485e332;
-  regex-based sig deciphering is not available for this player generation.
-  Integration impact depends on whether the manifest clients in use return
-  signatureCipher-gated streams (unverified offline).
+- SIGNATURE: all six NewPipe sig call-site regexes fail to match
+  b485e332 (they also fail on the June player 74edf1a3). No other
+  sig-extraction source was validated in this work; sig support for this
+  player generation is unresolved. Integration impact depends on whether
+  the manifest clients in use return signatureCipher-gated streams
+  (unverified offline).
