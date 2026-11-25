@@ -116,6 +116,7 @@ class PlayerControlsOverlay extends StatelessWidget {
     required this.onPrev,
     this.showQuality = false,
     this.visible = true,
+    this.transportHidden = false, // ZMIX-EDIT
   });
 
   final ZmixPlayerSurface player; // ZMIX-EDIT
@@ -150,6 +151,11 @@ class PlayerControlsOverlay extends StatelessWidget {
   final bool
   showQuality; // plain quality text on the top-bar right (with controls)
   final bool visible; // drives the bars' slide-in (top drops, bottom rises)
+
+  /// ZMIX-EDIT: ZMIX's double-tap seek feedback pill sits at the exact
+  /// center where this transport renders, so the page suppresses the
+  /// transport while seek feedback is up instead of overlapping it.
+  final bool transportHidden;
 
   /// Overflow panel that slides in from the RIGHT (like the episodes panel) —
   /// holds the occasional actions so the control bars stay clean.
@@ -503,6 +509,7 @@ class PlayerControlsOverlay extends StatelessWidget {
         // double-tap honoured the user's Double-tap skip setting, so the two
         // disagreed; seeking is covered by double-tap, drag-to-seek and the
         // MegaSkip pill, all of which read the same preference.
+        if (!transportHidden) // ZMIX-EDIT
         Center(
           child: Row(
             mainAxisSize: MainAxisSize.min,

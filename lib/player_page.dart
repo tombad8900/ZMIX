@@ -15,6 +15,30 @@ import 'player_hud.dart';
 import 'storage.dart';
 import 'youtube_service.dart';
 
+/// The production visibility composite for the player controls, exactly as
+/// upstream's player_screen mounts its overlay: fade (160ms in / 240ms out)
+/// plus IgnorePointer so hidden controls take no taps. Extracted as a widget
+/// so golden/widget tests exercise the real production gate, not a copy.
+class ControlsGate extends StatelessWidget {
+  const ControlsGate({super.key, required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: visible ? 1 : 0,
+      duration: Duration(milliseconds: visible ? 160 : 240),
+      curve: Curves.easeOutCubic,
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: child,
+      ),
+    );
+  }
+}
+
 /// ZMIX custom player. The controls overlay is a literal port of Zangetsu's
 /// PlayerControlsOverlay + PlayerSeekBar + widgets (GPL-3.0, lib/player/),
 /// wired to media_kit through [MediaKitPlayerSurface]; ZMIX-specific extras
@@ -508,15 +532,9 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
           // as upstream's player_screen mounts it: only when unlocked, under
           // AnimatedOpacity + IgnorePointer gated on controls visibility.
           if (!_locked)
-            AnimatedOpacity(
-              opacity: _controlsVisible ? 1 : 0,
-              duration: Duration(
-                milliseconds: _controlsVisible ? 160 : 240,
-              ),
-              curve: Curves.easeOutCubic,
-              child: IgnorePointer(
-                ignoring: !_controlsVisible,
-                child: PlayerControlsOverlay(
+            ControlsGate(
+              visible: _controlsVisible,
+              child: PlayerControlsOverlay(
                   player: MediaKitPlayerSurface(_player),
                   episodeNumber: _index + 1,
                   episodeTitle: _title,
@@ -552,8 +570,10 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
                   zoomLabel: kPlayerFits[_fitIndex].$2,
                   showQuality: true,
                   visible: _controlsVisible,
+                  // The seek pill renders at the same center point; never
+                  // overlap it with the transport.
+                  transportHidden: _seekDelta != 0,
                 ),
-              ),
             ),
           // ZMIX-specific extras with no upstream counterpart (player_hud.dart).
           if (_seekDelta != 0 && !_locked)

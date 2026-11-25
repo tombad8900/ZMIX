@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zmix/player/player_controls_config.dart';
 import 'package:zmix/player/player_controls_overlay.dart';
 import 'package:zmix/player_hud.dart';
+import 'package:zmix/player_page.dart';
 
 import 'golden_fonts.dart';
 
@@ -51,6 +52,7 @@ Widget _overlay({
   bool multiEpisode = true,
   bool hasNext = true,
   bool hasQualityChoices = true,
+  bool transportHidden = false,
 }) {
   return PlayerControlsOverlay(
     player: surface ?? FakePlayerSurface(),
@@ -79,6 +81,7 @@ Widget _overlay({
     zoomLabel: 'ملاءمة',
     showQuality: true,
     visible: visible,
+    transportHidden: transportHidden,
   );
 }
 
@@ -150,12 +153,14 @@ void main() {
   });
 
   testWidgets('ported overlay + ZMIX extras: seek, hud, boost', (tester) async {
+    // Production wiring (PlayerPage): while seek feedback is up the center
+    // transport is suppressed so the centered pill never overlaps it.
     await pump(
       tester,
       Stack(
         fit: StackFit.expand,
         children: [
-          _overlay(),
+          _overlay(transportHidden: true),
           const SeekIndicator(delta: 20, forward: true),
           const PlayerHud(isBrightness: false, value: 0.65),
           const BoostBadge(),
@@ -164,14 +169,18 @@ void main() {
     );
     expect(find.text('20 ث'), findsOneWidget);
     expect(find.text('2×'), findsOneWidget);
+    expect(find.byIcon(Icons.skip_next_rounded), findsNothing);
+    expect(find.byIcon(Icons.pause_rounded), findsNothing);
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/player_overlay_seek_hud_boost.png'),
     );
   });
 
-  testWidgets('locked: only the lock affordance', (tester) async {
-    await pump(tester, LockOverlay(onUnlock: () {}), dark: true);
+  testWidgets('locked: only the lock affordance, artwork stays visible',
+      (tester) async {
+    var unlocked = false;
+    await pump(tester, LockOverlay(onUnlock: () => unlocked = true));
     expect(find.byIcon(Icons.lock_rounded), findsOneWidget);
     expect(find.byIcon(Icons.high_quality_rounded), findsNothing);
     expect(find.byIcon(Icons.skip_next_rounded), findsNothing);
@@ -179,6 +188,8 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/player_overlay_locked.png'),
     );
+    await tester.tap(find.byIcon(Icons.lock_rounded));
+    expect(unlocked, isTrue);
   });
 
   testWidgets('error panel over the overlay', (tester) async {
@@ -232,11 +243,74 @@ void main() {
     expect(find.byIcon(Icons.high_quality_rounded), findsNothing);
   });
 
-  testWidgets('hidden controls: bottom block slides away', (tester) async {
+  testWidgets(
+      'component fixture: visible=false only slides the bottom block '
+      '(production hiding is the gate, tested below)', (tester) async {
     await pump(tester, _overlay(visible: false));
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/player_overlay_hidden.png'),
+    );
+  });
+
+  testWidgets('production gate: hidden controls are gone and take no taps',
+      (tester) async {
+    var playTapped = false;
+    await pump(
+      tester,
+      ControlsGate(
+        visible: false,
+        child: PlayerControlsOverlay(
+          player: FakePlayerSurface(),
+          episodeNumber: 3,
+          episodeTitle: 'فيلم الاختبار الطويل 2024',
+          multiEpisode: true,
+          hasNext: true,
+          hasQualityChoices: true,
+          activeQualityLabel: '360p',
+          onTogglePlay: () => playTapped = true,
+          onSeek: (_) {},
+          onNext: () {},
+          onPrev: () {},
+          showTitle: 'قائمة الاختبار',
+          duration: const Duration(minutes: 45, seconds: 10),
+          onDurationChanged: (_) {},
+          onInteract: () {},
+          onBack: () {},
+          onSpeed: () {},
+          onQuality: () {},
+          onLock: () {},
+          onRotate: null,
+          portraitMode: false,
+          barConfig: PlayerControlsConfig.defaults,
+          onZoom: () {},
+          zoomLabel: 'ملاءمة',
+          showQuality: true,
+          visible: false,
+        ),
+      ),
+    );
+    // Golden proves the composite hides the controls over representative
+    // artwork; only the artwork may be visible.
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/player_gate_hidden.png'),
+    );
+    // IgnorePointer: taps in the center (where pause sits) reach nothing.
+    await tester.tapAt(const Offset(422, 195)); // logical center
+    expect(playTapped, isFalse);
+  });
+
+  testWidgets('production gate: visible again after toggling back',
+      (tester) async {
+    await pump(
+      tester,
+      ControlsGate(visible: true, child: _overlay()),
+    );
+    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/player_gate_visible.png'),
     );
   });
 }
