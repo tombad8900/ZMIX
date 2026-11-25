@@ -1,14 +1,13 @@
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import 'models.dart';
+import 'playlist_fetcher.dart';
 
 /// Thin wrapper over youtube_explode_dart for the library flows.
 class YoutubeService {
   YoutubeService() : _yt = YoutubeExplode();
 
   final YoutubeExplode _yt;
-
-  static const int _maxVideosPerPlaylist = 200;
 
   /// Fetches a playlist's real metadata and video list from YouTube.
   /// Throws [FormatException] when the link is not a playlist link.
@@ -18,15 +17,15 @@ class YoutubeService {
       throw const FormatException('مش قادر أفهم الرابط ده كقائمة تشغيل يوتيوب');
     }
     final playlist = await _yt.playlists.get(PlaylistId(parsed));
-    final videos = <LibraryVideo>[];
-    await for (final v in _yt.playlists.getVideos(playlist.id)) {
-      videos.add(LibraryVideo(
-        id: v.id.value,
-        title: v.title,
-        thumbUrl: ThumbnailSet(v.id.value).highResUrl,
-        durationSeconds: v.duration?.inSeconds,
-      ));
-      if (videos.length >= _maxVideosPerPlaylist) break;
+    // youtube_explode's getVideos yields nothing since YouTube moved playlist
+    // pages to lockupViewModel (verified 2026-11-25); ZMIX fetches the list
+    // itself from the same public endpoint the website uses.
+    final fetcher = PlaylistFetcher();
+    final List<LibraryVideo> videos;
+    try {
+      videos = await fetcher.fetchVideos(playlist.id.value);
+    } finally {
+      fetcher.close();
     }
     final name = (nickname != null && nickname.trim().isNotEmpty)
         ? nickname.trim()

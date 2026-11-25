@@ -47,12 +47,18 @@ class _PlaylistPageState extends State<PlaylistPage> {
     }
   }
 
+  /// Dev-only: with DEMO_SEED, tapping a demo video plays this sample stream
+  /// instead of resolving YouTube (CORS blocks resolution in web previews).
+  static const String _demoStreamUrl = String.fromEnvironment('DEMO_STREAM_URL');
+
   Future<void> _play(LibraryVideo video) async {
     if (_resolvingId != null) return;
     setState(() => _resolvingId = video.id);
     final service = YoutubeService();
     try {
-      final stream = await service.resolvePlayable(video.id);
+      final stream = _demoStreamUrl.isNotEmpty
+          ? (url: _demoStreamUrl, quality: 'demo')
+          : await service.resolvePlayable(video.id);
       await widget.store.recordPlay(
         videoId: video.id,
         title: video.title,
