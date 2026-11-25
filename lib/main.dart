@@ -33,6 +33,7 @@ class ZmixTrialApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
+        fontFamily: 'Naskh',
       ),
       home: const TrialHome(),
     );
