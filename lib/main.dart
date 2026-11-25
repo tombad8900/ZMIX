@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:media_kit/media_kit.dart';
@@ -15,7 +16,9 @@ const bool kDemoSeed = bool.fromEnvironment('DEMO_SEED');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
+  // media_kit's native video backend has no web implementation in this build;
+  // initializing it on web kills startup (blank preview). Android path only.
+  if (!kIsWeb) MediaKit.ensureInitialized();
   final store = LibraryStore();
   await store.load();
   if (kDemoSeed && store.playlists.isEmpty) {

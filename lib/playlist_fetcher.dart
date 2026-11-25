@@ -65,7 +65,8 @@ class PlaylistFetcher {
     bool Function()? isCancelled,
   }) async {
     final videos = <LibraryVideo>[];
-    final seen = <String>{};
+    // No deduplication: repeated videos are real playlist positions
+    // (verified on a live playlist - same video at positions 23/35/50).
     var firstPage = true;
     Map<String, dynamic> body = {
       'context': _context,
@@ -98,7 +99,7 @@ class PlaylistFetcher {
       for (final lockup in lockups) {
         if (lockup['contentType'] != 'LOCKUP_CONTENT_TYPE_VIDEO') continue;
         final id = lockup['contentId'] as String?;
-        if (id == null || id.length != 11 || !seen.add(id)) continue;
+        if (id == null || id.length != 11) continue;
         final video = _parseLockup(lockup, id);
         if (video != null) {
           videos.add(video);
@@ -171,6 +172,9 @@ class PlaylistFetcher {
     return seconds;
   }
 
+  /// The first page can carry more than one continuation token; only the
+  /// first one paginates the video list (verified live: the second token
+  /// returns an empty payload). Take the first.
   String? _findContinuation(dynamic node) {
     final commands = <Map<String, dynamic>>[];
     _findAll(node, 'continuationCommand', commands);

@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:palette_generator/palette_generator.dart';
 
@@ -53,6 +54,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   Future<void> _play(LibraryVideo video) async {
     if (_resolvingId != null) return;
+    if (kIsWeb) {
+      // The web preview has no media_kit backend; playback is Android-only.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('التشغيل مش متاح في معاينة الويب - بيشتغل على الموبايل')),
+      );
+      return;
+    }
     setState(() => _resolvingId = video.id);
     final service = YoutubeService();
     try {

@@ -306,7 +306,7 @@ String _countLabel(LibraryPlaylist playlist) {
   final got = playlist.videos.length;
   switch (playlist.importNote) {
     case 'short_of_declared':
-      return '$got من ${playlist.totalCountHint} معلنة - الباقي مش متاح من يوتيوب';
+      return '$got من ${playlist.totalCountHint} معلنة';
     case 'cancelled':
       return '$got فيديو - الاستيراد اتلغى';
     case 'network':
@@ -387,7 +387,7 @@ class _AddPlaylistSheetState extends State<AddPlaylistSheet> {
       if (!playlist.importComplete) {
         // Partial import stays visibly partial; never implied complete.
         final detail = playlist.importNote == 'short_of_declared'
-            ? 'يوتيوب بيعلن ${playlist.totalCountHint} فيديو لكن اللي بيقدمه فعليًا ${playlist.videos.length} بس (غالبًا فيه فيديوهات محذوفة أو خاصة جوه القايمة).'
+            ? 'اتجاب ${playlist.videos.length} مدخل من أصل ${playlist.totalCountHint} معلنة في يوتيوب. سبب الفرق لسه مش متأكد (ممكن فيديوهات محذوفة/خاصة أو قيود عرض من يوتيوب) - مش مؤكد إن الباقي متاح.'
             : 'اتحفظ ${playlist.videos.length} فيديو بس - الاستيراد مكملش للآخر. إعادة إضافة القايمة بتستكملها.';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(detail),

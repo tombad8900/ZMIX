@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -22,6 +23,13 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Future<void> _replay(HistoryEntry entry) async {
     if (_resolvingId != null) return;
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('التشغيل مش متاح في معاينة الويب - بيشتغل على الموبايل')),
+      );
+      return;
+    }
     setState(() => _resolvingId = entry.videoId);
     final service = YoutubeService();
     try {
