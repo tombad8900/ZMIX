@@ -206,3 +206,57 @@ class LockOverlay extends StatelessWidget {
     );
   }
 }
+
+/// One half of the player's gesture surface (left = brightness, right =
+/// volume). Extracted so the side routing is widget-testable: the side must
+/// come from THIS widget's [isLeft], never from gesture localPosition, which
+/// is relative to the half itself (the 0.3.1 volume bug: both halves read as
+/// left, so only brightness worked).
+class ZmixGestureHalf extends StatelessWidget {
+  const ZmixGestureHalf({
+    super.key,
+    required this.isLeft,
+    required this.onTap,
+    required this.onDoubleTap,
+    required this.onLongPressStart,
+    required this.onLongPressEnd,
+    required this.onHorizontalDragStart,
+    required this.onHorizontalDragUpdate,
+    required this.onHorizontalDragEnd,
+    required this.onVerticalDragStart,
+    required this.onVerticalDragUpdate,
+    required this.onVerticalDragEnd,
+  });
+
+  final bool isLeft;
+  final VoidCallback onTap;
+  final VoidCallback onDoubleTap;
+  final GestureLongPressStartCallback onLongPressStart;
+  final GestureLongPressEndCallback onLongPressEnd;
+  final GestureDragStartCallback onHorizontalDragStart;
+  final GestureDragUpdateCallback onHorizontalDragUpdate;
+  final GestureDragEndCallback onHorizontalDragEnd;
+
+  /// Receives the drag details plus this half's side (true = left).
+  final void Function(DragStartDetails details, bool isLeft) onVerticalDragStart;
+  final GestureDragUpdateCallback onVerticalDragUpdate;
+  final GestureDragEndCallback onVerticalDragEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      onDoubleTap: onDoubleTap,
+      onLongPressStart: onLongPressStart,
+      onLongPressEnd: onLongPressEnd,
+      onHorizontalDragStart: onHorizontalDragStart,
+      onHorizontalDragUpdate: onHorizontalDragUpdate,
+      onHorizontalDragEnd: onHorizontalDragEnd,
+      onVerticalDragStart: (d) => onVerticalDragStart(d, isLeft),
+      onVerticalDragUpdate: onVerticalDragUpdate,
+      onVerticalDragEnd: onVerticalDragEnd,
+      child: const SizedBox.expand(),
+    );
+  }
+}

@@ -299,6 +299,42 @@ void main() {
     expect(picked, isNull); // Off picks null
   });
 
+  testWidgets(
+      'SYNTHETIC subtitle cue over artwork: Arabic shaping/legibility only, NOT mpv integration',
+      (tester) async {
+    // Renders a real auto-generated Arabic cue (from the caption probe) the
+    // way mpv's default styling presents it (white, outlined, bottom-center)
+    // over the busy artwork stand-in. Proves font shaping and legibility
+    // only; actual media_kit subtitle rendering needs a device.
+    await pump(
+      tester,
+      const Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: 56),
+          child: Text(
+            'النهار ويخبط خبطتهم عرفت منين ححكيلك في',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 20,
+              color: Colors.white,
+              shadows: [
+                Shadow(blurRadius: 2, color: Colors.black),
+                Shadow(blurRadius: 6, color: Colors.black),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+        find.text('النهار ويخبط خبطتهم عرفت منين ححكيلك في'), findsOneWidget);
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/player_subtitle_cue_synthetic.png'),
+    );
+  });
+
   testWidgets('episodes panel: rows, current highlight, untitled label, select',
       (tester) async {
     var selected = -1;

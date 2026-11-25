@@ -792,8 +792,8 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   }
 
   Widget _gestureHalf({required bool isLeft}) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return ZmixGestureHalf(
+      isLeft: isLeft,
       onTap: _toggleControls,
       onDoubleTap: () => _doubleTapSeek(!isLeft),
       onLongPressStart: _startBoost,
@@ -801,13 +801,9 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       onHorizontalDragStart: _startScrub,
       onHorizontalDragUpdate: _updateScrub,
       onHorizontalDragEnd: _endScrub,
-      // ZMIX bugfix (0.3.2 device report): localPosition is relative to
-      // this half of the gesture Row, so the old width/2 check always
-      // landed on brightness; the half must come from the closure.
-      onVerticalDragStart: (d) => _startVerticalDrag(d, isLeft: isLeft),
+      onVerticalDragStart: (d, side) => _startVerticalDrag(d, isLeft: side),
       onVerticalDragUpdate: _updateVerticalDrag,
       onVerticalDragEnd: _endVerticalDrag,
-      child: const SizedBox.expand(),
     );
   }
 }
