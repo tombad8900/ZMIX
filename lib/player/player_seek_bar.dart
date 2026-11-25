@@ -1,0 +1,393 @@
+// Ported from Zangetsu (https://github.com/Spyou/Zangetsu), GPL-3.0,
+// features/player/player_seek_bar.dart at upstream commit
+// 772fac56d265b238b90118bd68abe2e7353b1f6e.
+// Literal copy with integration edits only; each edit is marked ZMIX-EDIT.
+// ZMIX remains GPL-3.0.
+
+part of 'player_controls_overlay.dart';
+
+class PlayerSeekBar extends StatefulWidget {
+  const PlayerSeekBar({
+    super.key,
+    required this.player, // ZMIX-EDIT: media_kit Player directly (no PlayerCubit)
+    required this.onSeek, // ZMIX-EDIT: seek callback (was controller.seekTo)
+    required this.duration,
+    required this.onInteract,
+    this.trailing,
+  });
+
+  final Player player;
+  final void Function(Duration position) onSeek;
+  final Duration duration;
+  final VoidCallback onInteract;
+
+  /// Sits at the far end of the timestamp's line (the MegaSkip pill). Riding
+  /// the same row costs no extra height — it used to own a line to itself,
+  /// which pushed it well clear of the bar it belongs to.
+  final Widget? trailing;
+
+  @override
+  State<PlayerSeekBar> createState() => _SeekRowState();
+}
+
+class _SeekRowState extends State<PlayerSeekBar> {
+  // While the user is dragging the thumb, hold the value locally so the live
+  // position stream doesn't yank it back (which made it feel un-draggable).
+  double? _dragMs;
+
+  // The live thumb only creeps forward, but the raw position stream fires ~once
+  // per decoded frame — so the whole Slider (with its custom buffered track)
+  // rebuilt every frame while the controls were up, dragging the panel down to
+  // a GPU-bound ~20fps. Sample to ~4Hz: invisible for a slowly-advancing thumb,
+  // and scrubbing stays perfectly smooth because it runs off _dragMs, not this.
+  late final Stream<Duration> _livePosition = widget
+      .player
+      .stream
+      .position
+      .map((p) => Duration(milliseconds: (p.inMilliseconds ~/ 250) * 250))
+      .distinct();
+
+  // Tap the right-hand time to flip between total duration and remaining time
+  // (a negative countdown, e.g. "−1:00"), CloudStream-style.
+  bool _showRemaining = false;
+
+  // ZMIX-EDIT: upstream's scrub-preview bubble (SeekPreview storyboard
+  // frames) is omitted - ZMIX has no storyboard/preview-frame source for
+  // YouTube streams. The time bubble below is kept; the preview box above
+  // it renders nothing (upstream's own fallback when no preview exists).
+  // _maybePrewarm/_warmPreview/_ensurePreview/_requestPreview are removed
+  // with it; the slider callbacks below keep their surrounding logic.
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final h = d.inHours;
+    return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final totalMs = widget.duration.inMilliseconds;
+    final max = totalMs > 0 ? totalMs.toDouble() : 1.0;
+    // Playback time runs left to right even when the app language is RTL.
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: StreamBuilder<Duration>(
+        stream: _livePosition,
+        initialData: widget.player.state.position,
+        builder: (context, snap) {
+          final streamMs = (snap.data ?? Duration.zero).inMilliseconds
+              .clamp(0, max.toInt())
+              .toDouble();
+          // Use the drag value while scrubbing, else the live position.
+          final value = (_dragMs ?? streamMs).clamp(0.0, max);
+          final shownPos = Duration(milliseconds: value.round());
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Elapsed / total sits above the bar so the bar itself can run the
+              // full width — easier to scrub, and it reads as one clean line.
+              // Tapping still flips the total for a remaining countdown. Anything
+              // passed as [trailing] shares this line at the far end.
+              Row(
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      setState(() => _showRemaining = !_showRemaining);
+                      widget.onInteract();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      // Same translucent chip as the button groups, so the whole
+                      // bottom block reads as one set of parts.
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          child: Text(
+                            '${_fmt(shownPos)} / ${_showRemaining ? '-${_fmt(widget.duration - shownPos)}' : _fmt(widget.duration)}',
+                            style: AppText.caption.copyWith(
+                              color: Colors.white,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              height: 1.1,
+                              letterSpacing: 0.3,
+                              // Fixed-width digits: without these the label twitches
+                              // every time a 1 ticks past, since 1 is narrower than
+                              // the rest in a proportional face.
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (widget.trailing != null) ...[
+                    const Spacer(),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: widget.trailing!,
+                    ),
+                  ],
+                ],
+              ),
+              SizedBox(
+                width: double.infinity,
+                child: LayoutBuilder(
+                  builder: (context, cons) {
+                    final w = cons.maxWidth;
+                    final frac = max > 0 ? (value / max).clamp(0.0, 1.0) : 0.0;
+                    const bubbleW = 168.0;
+                    final left = (frac * w - bubbleW / 2).clamp(
+                      0.0,
+                      (w - bubbleW).clamp(0.0, double.infinity),
+                    );
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        SizedBox(
+                          width: w,
+                          child: StreamBuilder<Duration>(
+                            stream: widget.player.stream.buffer,
+                            builder: (context, bufSnap) {
+                              final bufMs = (bufSnap.data ?? Duration.zero)
+                                  .inMilliseconds;
+                              final bufferedFrac = totalMs > 0
+                                  ? (bufMs / totalMs).clamp(0.0, 1.0)
+                                  : 0.0;
+                              return SliderTheme(
+                                data: SliderTheme.of(context).copyWith(
+                                  activeTrackColor: AppColors.accent,
+                                  inactiveTrackColor: Colors.white24,
+                                  trackShape: _BufferedSliderTrackShape(
+                                    buffered: bufferedFrac,
+                                    bufferedColor: Colors.white.withValues(
+                                      alpha: 0.55,
+                                    ),
+                                    // ZMIX-EDIT: no AniSkip chapter/skip
+                                    // source exists for YouTube playlists,
+                                    // so the marker list stays empty.
+                                    marks: const [],
+                                  ),
+                                  thumbColor: Colors.white,
+                                  overlayColor: AppColors.accentSoft,
+                                  trackHeight: 6,
+                                  // Thumb grows while scrubbing (YouTube-style).
+                                  thumbShape: RoundSliderThumbShape(
+                                    enabledThumbRadius: _dragMs != null
+                                        ? 11
+                                        : 7,
+                                  ),
+                                  overlayShape: const RoundSliderOverlayShape(
+                                    overlayRadius: 18,
+                                  ),
+                                ),
+                                child: Slider(
+                                  min: 0,
+                                  max: max,
+                                  value: value,
+                                  // Replaces the default inset — half the overlay
+                                  // width (~18px) horizontally, the overlay height
+                                  // vertically, which was most of the dead space
+                                  // around the bar. Horizontal is the thumb radius
+                                  // exactly: the thumb centres on the track's end,
+                                  // so anything less and half the dot hangs past
+                                  // the line the chips above and below sit on.
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 6,
+                                  ),
+                                  onChangeStart: totalMs <= 0
+                                      ? null
+                                      : (v) {
+                                          setState(() => _dragMs = v);
+                                          widget.onInteract();
+                                        },
+                                  onChanged: totalMs <= 0
+                                      ? null
+                                      : (v) {
+                                          setState(() => _dragMs = v);
+                                          widget.onInteract();
+                                        },
+                                  onChangeEnd: totalMs <= 0
+                                      ? null
+                                      : (v) {
+                                          final position = Duration(
+                                            milliseconds: v.round(),
+                                          );
+                                          widget.onSeek(position);
+                                          setState(() => _dragMs = null);
+                                          widget.onInteract();
+                                        },
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        if (_dragMs != null)
+                          Positioned(
+                            left: left,
+                            bottom: 26,
+                            width: bubbleW,
+                            child: _PreviewBubble(
+                              preview: null, // ZMIX-EDIT: no SeekPreview source
+                              time: _fmt(shownPos),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Seek-bar track that draws three layers like YouTube/Netflix: faint
+/// background (unbuffered), a lighter "buffered" layer up to [buffered]
+/// (fetched-ahead), and the accent played layer up to the thumb.
+class _BufferedSliderTrackShape extends SliderTrackShape
+    with BaseSliderTrackShape {
+  _BufferedSliderTrackShape({
+    required this.buffered,
+    required this.bufferedColor,
+    this.marks = const [],
+  });
+
+  /// Buffered fraction in [0, 1].
+  final double buffered;
+  final Color bufferedColor;
+
+  /// Chapter/skip marker fractions in [0, 1] (AniSkip OP/ED boundaries),
+  /// drawn as small notches poking above/below the track.
+  final List<double> marks;
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required TextDirection textDirection,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+    double additionalActiveTrackHeight = 2,
+  }) {
+    final rect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+    final radius = Radius.circular(rect.height / 2);
+    final canvas = context.canvas;
+
+    // 1. Background (unbuffered remainder).
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, radius),
+      Paint()..color = sliderTheme.inactiveTrackColor ?? Colors.white24,
+    );
+
+    // 2. Buffered (fetched ahead).
+    if (buffered > 0) {
+      final bw = rect.width * buffered.clamp(0.0, 1.0);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(rect.left, rect.top, bw, rect.height),
+          radius,
+        ),
+        Paint()..color = bufferedColor,
+      );
+    }
+
+    // 3. Played (up to the thumb).
+    final activeRight = thumbCenter.dx.clamp(rect.left, rect.right);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTRB(rect.left, rect.top, activeRight, rect.bottom),
+        radius,
+      ),
+      Paint()..color = sliderTheme.activeTrackColor ?? AppColors.accent,
+    );
+
+    // 4. Chapter / skip markers (AniSkip OP/ED boundaries) — small notches
+    // that overhang the track so they read as markers, not part of the fill.
+    if (marks.isNotEmpty) {
+      final markPaint = Paint()..color = Colors.white.withValues(alpha: 0.95);
+      final h = rect.height + 4;
+      for (final m in marks) {
+        final x = rect.left + rect.width * m.clamp(0.0, 1.0);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(
+              center: Offset(x, rect.center.dy),
+              width: 3,
+              height: h,
+            ),
+            const Radius.circular(1.5),
+          ),
+          markPaint,
+        );
+      }
+    }
+  }
+}
+
+/// Floating thumbnail shown above the seek-bar thumb while scrubbing. Shows the
+/// preview frame once one is available, with a spinner in the box while it's
+/// still loading, and the target time beneath it. On sources that can't be
+/// previewed at all — or that fail to answer for a few seconds — it falls
+/// back to a plain time bubble (no box, no spinner) instead of spinning
+/// forever.
+class _PreviewBubble extends StatelessWidget {
+  const _PreviewBubble({required this.preview, required this.time});
+
+  // ZMIX-EDIT: typed as the absent SeekPreview upstream; always null here,
+  // which is upstream's own "no preview" branch (time bubble only).
+  final Object? preview;
+  final String time;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            child: Text(
+              time,
+              style: AppText.caption.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
