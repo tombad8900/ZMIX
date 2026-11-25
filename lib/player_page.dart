@@ -8,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
 import 'models.dart';
+import 'playback_switcher.dart';
 import 'player/player_controls_config.dart';
 import 'player/player_controls_overlay.dart';
 import 'player/player_episodes_panel.dart';
@@ -93,12 +94,21 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   // The URL currently loaded in the player (stream or chosen quality).
   late String _currentUrl;
 
-  // Available qualities (best first), fetched after open: muxed streams
-  // plus adaptive video-only ones played with _audioUrl as mpv's external
-  // audio track (YouTube caps muxed at 360p for most videos).
+  // Available qualities (best first), fetched after open. 0.3.5: muxed
+  // only again — adaptive video-only entries 0.3.4 offered all failed on
+  // device (mpv 'Failed to open'): their URLs need n-signature deciphering
+  // and youtube_explode's only solver is a deno subprocess that cannot run
+  // inside an Android app. resolveStreamChoices keeps the adaptive code for
+  // a future embedded solver / HLS path but returns muxed only.
   List<ZmixQualityOption> _qualities = [];
   String? _audioUrl;
   bool _currentNeedsAudio = false;
+
+  // Position to resume after a quality switch (or an error rollback
+  // re-open); set by _switchQuality, consumed once by the duration listener.
+  Duration? _resumePosition;
+
+  final ZmixPlaybackSwitcher _switcher = ZmixPlaybackSwitcher();
 
   // Subtitles (YouTube caption tracks -> SRT -> media_kit external track).
   List<ZmixCaptionTrack> _captions = [];
@@ -146,8 +156,43 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     _currentUrl = widget.streamUrl;
     _player = Player();
     _controller = VideoController(_player);
+    // A stream that produced a real duration is confirmed playing: it
+    // becomes the rollback target, and a stashed resume position (set by
+    // _switchQuality) is applied exactly once here — a failed open can
+    // never leave a dangling seek listener behind.
+    _player.stream.duration.listen((d) {
+      if (!mounted || d <= Duration.zero) return;
+      final resume = _resumePosition;
+      if (resume != null) {
+        _resumePosition = null;
+        _player.seek(resume < d ? resume : d);
+      }
+      _switcher.markPlaying(_currentUrl,
+          quality: _currentQuality, needsAudio: _currentNeedsAudio);
+    });
     _player.stream.error.listen((e) {
-      if (mounted) setState(() => _error = e);
+      if (!mounted) return;
+      // Device evidence (0.3.4): a failed quality open must never trap the
+      // user on a dead player or print the raw signed URL (it carries the
+      // device IP). Roll back to the last confirmed stream; show the panel
+      // only when there is nothing to roll back to.
+      switch (_switcher.onError(_currentUrl)) {
+        case RollbackToLastGood(:final url, :final quality, :final needsAudio):
+          setState(() {
+            _error = null;
+            _currentQuality = quality;
+            _currentNeedsAudio = needsAudio;
+          });
+          _currentUrl = url;
+          _player.open(Media(url), play: true).then((_) async {
+            await _reapplyAudio();
+            await _reapplyCaption();
+          });
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('الجودة دي مش شغالة دلوقتي — رجعنا لآخر جودة شغالة')));
+        case ShowError(:final message):
+          setState(() => _error = message);
+      }
     });
     _player.open(Media(widget.streamUrl), play: true);
     _loadQualities();
@@ -352,6 +397,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   Future<void> _switchQuality(ZmixQualityOption q) async {
     if (q.quality == _currentQuality) return;
     final resume = _player.state.position;
+    _resumePosition = resume; // consumed if the switch fails and rolls back
     final wasPlaying = _player.state.playing;
     setState(() {
       _currentQuality = q.quality;
@@ -362,16 +408,8 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     await _player.open(Media(q.url), play: wasPlaying);
     await _reapplyAudio();
     await _reapplyCaption();
-    if (resume > Duration.zero) {
-      // Seek only once the new stream knows its duration.
-      late StreamSubscription sub;
-      sub = _player.stream.duration.listen((d) {
-        if (d > Duration.zero) {
-          sub.cancel();
-          _player.seek(resume < d ? resume : d);
-        }
-      });
-    }
+    // Resume (and rollback on failure) is handled by the duration/error
+    // listeners via the stashed _resumePosition.
   }
 
   // ── Subtitles ─────────────────────────────────────────────────────────

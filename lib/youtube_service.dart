@@ -144,11 +144,17 @@ class YoutubeService {
     ];
   }
 
-  /// Every quality the player can offer: muxed streams (audio built in)
-  /// plus adaptive video-only streams (played with the audio track from
-  /// [ZmixStreamChoices.audioUrl] via mpv's external-audio support).
-  /// YouTube caps muxed at 360p for most videos, so everything above that
-  /// arrives video-only.
+  /// Every quality the player offers. 0.3.5: muxed streams only.
+  ///
+  /// 0.3.4 also offered adaptive video-only streams (played with the audio
+  /// track from [ZmixStreamChoices.audioUrl]); EVERY adaptive pick failed
+  /// on device with mpv 'Failed to open'. Adaptive URLs need n-signature
+  /// deciphering, and youtube_explode's only JS solver (DenoEJSSolver)
+  /// spawns a deno subprocess — impossible inside an Android app — so the
+  /// URLs it returns play only for ratebypass (muxed) itags. buildQuality
+  /// Choices/pickAudioUrl stay (unit-tested) for a future embedded solver
+  /// or an HLS path; until then `videoOnly` is passed empty so an
+  /// unplayable quality can never be offered.
   Future<ZmixStreamChoices> resolveStreamChoices(String videoId) async {
     final manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
     if (manifest.muxed.isEmpty && manifest.videoOnly.isEmpty) {
@@ -176,15 +182,8 @@ class YoutubeService {
               codec: s.videoCodec,
             ),
         ],
-        videoOnly: [
-          for (final s in manifest.videoOnly)
-            (
-              url: s.url.toString(),
-              height: s.videoResolution.height,
-              bitrate: s.bitrate.bitsPerSecond,
-              codec: s.videoCodec,
-            ),
-        ],
+        // Disabled on device, see the doc comment above.
+        videoOnly: const [],
       ),
       audioUrl: audioUrl,
     );
