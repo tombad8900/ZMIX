@@ -36,6 +36,7 @@ class PlayerChrome extends StatelessWidget {
     this.boosting = false,
     this.errorText,
     this.onBack,
+    this.onRetry,
     this.onPlayPause,
     this.onPrev,
     this.onNext,
@@ -69,6 +70,7 @@ class PlayerChrome extends StatelessWidget {
   final bool boosting;
   final String? errorText;
   final VoidCallback? onBack;
+  final VoidCallback? onRetry;
   final VoidCallback? onPlayPause;
   final VoidCallback? onPrev;
   final VoidCallback? onNext;
@@ -127,9 +129,10 @@ class PlayerChrome extends StatelessWidget {
         if (hudVisible && !locked) _hud(),
         if (boosting && !locked) _boostBadge(),
         if (controlsVisible || locked) _topBar(),
-        if (controlsVisible && !locked) _centerTransport(),
+        if (controlsVisible && !locked && errorText == null)
+          _centerTransport(),
         if (controlsVisible && !locked) _bottomBlock(context),
-        if (errorText != null && !locked) _errorBanner(),
+        if (errorText != null && !locked) _errorPanel(),
       ],
     );
   }
@@ -374,20 +377,43 @@ class PlayerChrome extends StatelessWidget {
     );
   }
 
-  Widget _errorBanner() {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.red.shade900.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(
-          'حصل خطأ في التشغيل: $errorText',
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 13, color: Colors.white),
+  /// Error presentation from Zangetsu's player (drm_player_screen.dart):
+  /// a centered icon + message + Close / Try again buttons, replacing the
+  /// center transport instead of overlapping any actionable control.
+  Widget _errorPanel() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline_rounded,
+                color: Colors.white70, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              'حصل خطأ في التشغيل: $errorText',
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: onBack,
+                  child: const Text('إغلاق',
+                      style: TextStyle(color: Colors.white70)),
+                ),
+                const SizedBox(width: 12),
+                FilledButton(
+                  onPressed: onRetry,
+                  child: const Text('حاول تاني'),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

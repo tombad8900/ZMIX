@@ -61,6 +61,9 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
 
   bool _locked = false;
 
+  // The URL currently loaded in the player (stream or chosen quality).
+  late String _currentUrl;
+
   // Available muxed qualities (best first), fetched after open.
   List<({String url, String quality})> _qualities = [];
 
@@ -96,6 +99,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+    _currentUrl = widget.streamUrl;
     _player = Player();
     _controller = VideoController(_player);
     _player.stream.error.listen((e) {
@@ -242,6 +246,14 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     );
   }
 
+  /// Retry after a playback error: reopen the current stream from scratch.
+  void _retry() {
+    setState(() => _error = null);
+    _player.open(Media(_currentUrl), play: true);
+    _loadQualities();
+    _scheduleHide();
+  }
+
   // ── Quality ────────────────────────────────────────────────────────────
 
   void _openQualitySheet() {
@@ -274,6 +286,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       _currentQuality = q.quality;
       _error = null;
     });
+    _currentUrl = q.url;
     await _player.open(Media(q.url), play: wasPlaying);
     if (resume > Duration.zero) {
       // Seek only once the new stream knows its duration.
@@ -314,6 +327,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         _zoom = 1.0;
         _zoomPan = Offset.zero;
       });
+      _currentUrl = stream.url;
       await _player.open(Media(stream.url), play: true);
       _loadQualities();
       _scheduleHide();
@@ -502,6 +516,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
                         boosting: _boosting,
                         errorText: _error,
                         onBack: () => Navigator.of(context).pop(),
+                        onRetry: _retry,
                         onPlayPause: () {
                           _player.playOrPause();
                           _scheduleHide();
