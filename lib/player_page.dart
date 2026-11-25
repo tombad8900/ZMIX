@@ -110,6 +110,19 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
 
   final ZmixPlaybackSwitcher _switcher = ZmixPlaybackSwitcher();
 
+  // The current open generation; every _openStream call bumps it so stale
+  // events from the previous stream cannot confirm the new candidate.
+  int _openGen = 0;
+
+  /// Every player open goes through here: the switcher starts a new
+  /// generation before mpv sees the URL, so no event from the old stream
+  /// can be mistaken for evidence about the new one.
+  Future<void> _openStream(String url, {required bool play}) {
+    _openGen = _switcher.beginOpen(url,
+        quality: _currentQuality, needsAudio: _currentNeedsAudio);
+    return _player.open(Media(url), play: play);
+  }
+
   // Subtitles (YouTube caption tracks -> SRT -> media_kit external track).
   List<ZmixCaptionTrack> _captions = [];
   ZmixCaptionTrack? _activeCaption;
@@ -156,10 +169,10 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     _currentUrl = widget.streamUrl;
     _player = Player();
     _controller = VideoController(_player);
-    // A stream that produced a real duration is confirmed playing: it
-    // becomes the rollback target, and a stashed resume position (set by
-    // _switchQuality) is applied exactly once here — a failed open can
-    // never leave a dangling seek listener behind.
+    // A stashed resume position (set by _switchQuality) is applied exactly
+    // once here — a failed open can never leave a dangling seek listener
+    // behind. Duration is metadata, so it is used ONLY for clamping the
+    // seek, never as playback confirmation.
     _player.stream.duration.listen((d) {
       if (!mounted || d <= Duration.zero) return;
       final resume = _resumePosition;
@@ -167,8 +180,20 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         _resumePosition = null;
         _player.seek(resume < d ? resume : d);
       }
-      _switcher.markPlaying(_currentUrl,
-          quality: _currentQuality, needsAudio: _currentNeedsAudio);
+    });
+    // Playback confirmation feeds the switcher from mpv's own state: the
+    // playlist must show the pending URL as its current entry, then
+    // position must advance while playing. Stale events from the previous
+    // stream carry a different URI / old generation and are rejected
+    // inside the switcher.
+    _player.stream.playlist.listen((pl) {
+      final uri =
+          (pl.index >= 0 && pl.index < pl.medias.length) ? pl.medias[pl.index].uri : null;
+      _switcher.onMediaLoaded(uri, generation: _openGen);
+    });
+    _player.stream.position.listen((p) {
+      _switcher.onPlaybackProgress(
+          generation: _openGen, position: p, playing: _player.state.playing);
     });
     _player.stream.error.listen((e) {
       if (!mounted) return;
@@ -184,7 +209,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
             _currentNeedsAudio = needsAudio;
           });
           _currentUrl = url;
-          _player.open(Media(url), play: true).then((_) async {
+          _openStream(url, play: true).then((_) async {
             await _reapplyAudio();
             await _reapplyCaption();
           });
@@ -194,7 +219,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
           setState(() => _error = message);
       }
     });
-    _player.open(Media(widget.streamUrl), play: true);
+    _openStream(widget.streamUrl, play: true);
     _loadQualities();
     _loadCaptions();
     _scheduleHide();
@@ -351,7 +376,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   /// Retry after a playback error: reopen the current stream from scratch.
   void _retry() {
     setState(() => _error = null);
-    _player.open(Media(_currentUrl), play: true).then((_) async {
+    _openStream(_currentUrl, play: true).then((_) async {
       await _reapplyAudio();
       await _reapplyCaption();
     });
@@ -405,7 +430,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       _currentNeedsAudio = q.videoOnly;
     });
     _currentUrl = q.url;
-    await _player.open(Media(q.url), play: wasPlaying);
+    await _openStream(q.url, play: wasPlaying);
     await _reapplyAudio();
     await _reapplyCaption();
     // Resume (and rollback on failure) is handled by the duration/error
@@ -579,7 +604,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         _zoomPan = Offset.zero;
       });
       _currentUrl = stream.url;
-      await _player.open(Media(stream.url), play: true);
+      await _openStream(stream.url, play: true);
       _loadQualities();
       // _preferredCaptionLang survives, so _loadCaptions re-selects the
       // same language on the new episode when YouTube offers it.

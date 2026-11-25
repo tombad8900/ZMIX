@@ -147,14 +147,21 @@ class YoutubeService {
   /// Every quality the player offers. 0.3.5: muxed streams only.
   ///
   /// 0.3.4 also offered adaptive video-only streams (played with the audio
-  /// track from [ZmixStreamChoices.audioUrl]); EVERY adaptive pick failed
-  /// on device with mpv 'Failed to open'. Adaptive URLs need n-signature
-  /// deciphering, and youtube_explode's only JS solver (DenoEJSSolver)
-  /// spawns a deno subprocess — impossible inside an Android app — so the
-  /// URLs it returns play only for ratebypass (muxed) itags. buildQuality
-  /// Choices/pickAudioUrl stay (unit-tested) for a future embedded solver
-  /// or an HLS path; until then `videoOnly` is passed empty so an
-  /// unplayable quality can never be offered.
+  /// track from [ZmixStreamChoices.audioUrl]); every adaptive pick failed
+  /// on the user's device with mpv 'Failed to open' (4 screenshots,
+  /// 2026-11-25) while muxed 360p played. HYPOTHESIS, unverified (YouTube
+  /// probing is prohibited): adaptive URLs commonly require n-signature
+  /// deciphering, and youtube_explode 3.1.0's only shipped solver
+  /// (DenoEJSSolver) spawns a deno subprocess that cannot run inside an
+  /// Android app, so ZMIX constructs YoutubeExplode with no solver; the
+  /// muxed itags that played presumably tolerated the missing deciphering.
+  /// Per-itag requirements were NOT established. The supported fix path
+  /// exists upstream: BaseEJSSolver needs only an `executeJavaScript`
+  /// implementation, so an embedded JS engine (e.g. QuickJS via
+  /// flutter_js) could supply it on-device — a candidate, not shipped.
+  /// buildQualityChoices/pickAudioUrl stay (unit-tested) for that path or
+  /// an HLS one; until then `videoOnly` is passed empty so an unplayable
+  /// quality can never be offered.
   Future<ZmixStreamChoices> resolveStreamChoices(String videoId) async {
     final manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
     if (manifest.muxed.isEmpty && manifest.videoOnly.isEmpty) {

@@ -3,12 +3,25 @@
 /// Pure Dart, no plugin imports: the full open/error/retry/rollback state
 /// logic is unit-testable in the VM with failure injection (a real media_kit
 /// Player needs native libmpv and cannot exist there; PlayerPage wires this
-/// controller to the live player's error stream).
+/// controller to the live player's streams).
 ///
 /// Device evidence behind the design (0.3.4, user screenshots 2026-11-25):
 /// any failed quality open left a dead player whose only recovery was
 /// exiting, and the error panel printed the raw signed stream URL (which
 /// carries the user's IP) on screen.
+///
+/// Confirmation discipline (review requirement): a candidate stream is
+/// NEVER treated as "playing" on metadata alone. A duration value can be
+/// container metadata or a stale event from the previous stream. The last
+/// confirmed stream is replaced only when ALL of the following hold for the
+/// CURRENT open generation:
+///   1. mpv's playlist reports the candidate's own URI as its current entry
+///      ([onMediaLoaded] — a stale event carries the old URI and is
+///      rejected), and
+///   2. position advances between two distinct progress events while the
+///      player reports playing ([onPlaybackProgress] — a failed open never
+///      advances position, and a single stale burst cannot pass).
+/// Until then the previous last-good stream is preserved untouched.
 library;
 
 /// What the player should do after a failed open.
@@ -30,27 +43,92 @@ class ShowError implements SwitchDecision {
 
 /// Tracks the last stream confirmed playing and decides recovery on error.
 class ZmixPlaybackSwitcher {
+  // Last-good: replaced ONLY by confirmed playback evidence.
   String? _goodUrl;
   String? _goodQuality;
   bool _goodNeedsAudio = false;
+
+  // Current open generation. Every open attempt invalidates confirmation
+  // state gathered under the previous one.
+  int _generation = 0;
+
+  // Pending candidate of the current generation.
+  String? _pendingUrl;
+  String? _pendingQuality;
+  bool _pendingNeedsAudio = false;
+
+  // Evidence flags for the current generation.
+  bool _mediaLoaded = false;
+  Duration? _lastPosition;
+  bool _confirmed = false;
 
   /// The URL a recovery attempt is currently trying, so a second failure on
   /// THAT stream falls through to the error panel instead of looping.
   String? _recoveryUrl;
 
-  /// Called when a stream is confirmed playing (first duration > 0 after
-  /// open). Becomes the rollback target for later failures.
-  void markPlaying(String url, {String? quality, bool needsAudio = false}) {
-    _goodUrl = url;
-    _goodQuality = quality;
-    _goodNeedsAudio = needsAudio;
-    if (_recoveryUrl == url) _recoveryUrl = null;
+  /// The current open generation id (for tests and wiring asserts).
+  int get generation => _generation;
+
+  /// Whether the pending candidate of the current generation is confirmed.
+  bool get confirmed => _confirmed;
+
+  /// A new open attempt begins; returns its generation id. Confirmation
+  /// evidence is accepted only for the latest generation, so stale events
+  /// from the previous stream cannot confirm the new candidate.
+  int beginOpen(String url, {String? quality, bool needsAudio = false}) {
+    _generation++;
+    _pendingUrl = url;
+    _pendingQuality = quality;
+    _pendingNeedsAudio = needsAudio;
+    _mediaLoaded = false;
+    _lastPosition = null;
+    _confirmed = false;
+    return _generation;
+  }
+
+  /// mpv's playlist reports [uri] as its current entry. Counts only when it
+  /// matches the pending candidate of the current generation; a stale
+  /// playlist event from the previous stream carries a different URI and is
+  /// ignored. Wrong generation: ignored.
+  void onMediaLoaded(String? uri, {required int generation}) {
+    if (generation != _generation || uri == null) return;
+    if (uri == _pendingUrl) _mediaLoaded = true;
+  }
+
+  /// Playback progress evidence. Confirms the candidate as the new
+  /// last-good only when the media is loaded (own URI seen), the player is
+  /// playing, and position strictly advanced versus the previous accepted
+  /// event of this generation — one stale burst can set the baseline but
+  /// never confirm by itself. Returns true when this call confirmed.
+  bool onPlaybackProgress({
+    required int generation,
+    required Duration position,
+    required bool playing,
+  }) {
+    if (generation != _generation || !_mediaLoaded || !playing) {
+      return false;
+    }
+    final last = _lastPosition;
+    if (last == null) {
+      _lastPosition = position;
+      return false;
+    }
+    if (position <= last) return false;
+    _lastPosition = position;
+    _goodUrl = _pendingUrl;
+    _goodQuality = _pendingQuality;
+    _goodNeedsAudio = _pendingNeedsAudio;
+    _confirmed = true;
+    if (_recoveryUrl == _goodUrl) _recoveryUrl = null;
+    return true;
   }
 
   /// Called when the live player reports an error for [failedUrl].
   /// Rolls back to the last confirmed stream when there is a different one;
   /// otherwise (initial open failed, or the rollback itself failed) shows
-  /// the sanitized error panel. Never loops a rollback.
+  /// the sanitized error panel. Never loops a rollback, and a failed
+  /// candidate has never overwritten the last-good target (confirmation is
+  /// evidence-gated), so the rollback target is always the original.
   SwitchDecision onError(String failedUrl) {
     final good = _goodUrl;
     if (good != null && failedUrl != good && _recoveryUrl == null) {
