@@ -71,6 +71,23 @@ class YoutubeService {
   }
 
   /// Resolves a playable muxed stream URL for a video.
+  /// All muxed (audio+video in one file) qualities, best first. Muxed-only
+  /// keeps one-URL-per-quality switching simple; adaptive split streams are
+  /// not exposed yet.
+  Future<List<({String url, String quality})>> resolvePlayableList(
+      String videoId) async {
+    final manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
+    if (manifest.muxed.isEmpty) {
+      throw const FormatException('مفيش صيغة تشغيل مدمجة متاحة للفيديو ده');
+    }
+    final streams = manifest.muxed.toList()
+      ..sort((a, b) => b.bitrate.bitsPerSecond.compareTo(a.bitrate.bitsPerSecond));
+    return [
+      for (final s in streams)
+        (url: s.url.toString(), quality: _qualityLabel(s.videoQuality.name)),
+    ];
+  }
+
   Future<({String url, String quality})> resolvePlayable(String videoId) async {
     final manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
     if (manifest.muxed.isEmpty) {

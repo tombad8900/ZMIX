@@ -1,28 +1,44 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
+import 'models.dart';
 import 'player_chrome.dart';
+import 'storage.dart';
+import 'youtube_service.dart';
 
-/// ZMIX custom player. Design language adapted from Zangetsu (GPL-3.0):
-/// auto-hiding overlay, double-tap seek, long-press speed boost,
-/// vertical brightness/volume swipes with a HUD, horizontal scrub.
-/// Implementation written for ZMIX on media_kit.
+/// ZMIX custom player. Overlay architecture adapted from Zangetsu (GPL-3.0,
+/// see player_chrome.dart): two-line title bar with lock, centre transport
+/// with previous/next, seek row with remaining-time toggle, capsule button
+/// bar with speed / quality / fit. Playback on media_kit.
 class PlayerPage extends StatefulWidget {
   const PlayerPage({
     super.key,
     required this.title,
     required this.streamUrl,
     this.qualityLabel,
+    this.videoId,
+    this.siblings,
+    this.videoIndex = 0,
+    this.store,
+    this.playlistName,
   });
 
   final String title;
   final String streamUrl;
   final String? qualityLabel;
+  final String? videoId;
+
+  /// Ordered videos of the containing playlist, for prev/next transport.
+  final List<LibraryVideo>? siblings;
+  final int videoIndex;
+  final LibraryStore? store;
+  final String? playlistName;
 
   @override
   State<PlayerPage> createState() => _PlayerPageState();
@@ -32,9 +48,26 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   late final Player _player;
   late final VideoController _controller;
 
+  late String _title;
+  late int _index;
+  String? _currentQuality;
+
   bool _controlsVisible = true;
   Timer? _hideTimer;
   String? _error;
+
+  // Fit modes, same trio as Zangetsu's _fits: Fit / Fill / Stretch.
+  static const List<(BoxFit, String)> _fits = [
+    (BoxFit.contain, 'ملاءمة'),
+    (BoxFit.cover, 'توسيع'),
+    (BoxFit.fill, 'تمديد'),
+  ];
+  int _fitIndex = 0;
+
+  bool _locked = false;
+
+  // Available muxed qualities (best first), fetched after open.
+  List<({String url, String quality})> _qualities = [];
 
   // Seek feedback (double-tap and scrub)
   int _seekDelta = 0; // seconds, signed; 0 = hidden
@@ -60,6 +93,9 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _title = widget.title;
+    _index = widget.videoIndex;
+    _currentQuality = widget.qualityLabel;
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.landscapeLeft,
@@ -71,7 +107,25 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       if (mounted) setState(() => _error = e);
     });
     _player.open(Media(widget.streamUrl), play: true);
+    _loadQualities();
     _scheduleHide();
+  }
+
+  Future<void> _loadQualities() async {
+    final id = widget.videoId ??
+        ((_index < (widget.siblings?.length ?? 0))
+            ? widget.siblings![_index].id
+            : null);
+    if (id == null || kIsWeb) return;
+    final service = YoutubeService();
+    try {
+      final list = await service.resolvePlayableList(id);
+      if (mounted) setState(() => _qualities = list);
+    } catch (_) {
+      // Quality picker stays hidden; playback continues on the opened stream.
+    } finally {
+      service.close();
+    }
   }
 
   @override
@@ -96,8 +150,123 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   }
 
   void _toggleControls() {
+    if (_locked) return;
     setState(() => _controlsVisible = !_controlsVisible);
     if (_controlsVisible) _scheduleHide();
+  }
+
+  void _toggleLock() {
+    setState(() {
+      _locked = !_locked;
+      if (_locked) _controlsVisible = false;
+    });
+    if (!_locked) {
+      setState(() => _controlsVisible = true);
+      _scheduleHide();
+    }
+  }
+
+  void _cycleFit() {
+    setState(() => _fitIndex = (_fitIndex + 1) % _fits.length);
+    _scheduleHide();
+  }
+
+  // ── Quality ────────────────────────────────────────────────────────────
+
+  void _openQualitySheet() {
+    if (_qualities.isEmpty) return;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF16161C),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(14),
+                child: Text('جودة التشغيل',
+                    style:
+                        TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+              for (final q in _qualities)
+                ListTile(
+                  title: Text(q.quality),
+                  trailing: q.quality == _currentQuality
+                      ? const Icon(Icons.check_rounded,
+                          color: PlayerChrome.accent)
+                      : null,
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _switchQuality(q);
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _switchQuality(({String url, String quality}) q) async {
+    if (q.quality == _currentQuality) return;
+    final resume = _player.state.position;
+    final wasPlaying = _player.state.playing;
+    setState(() {
+      _currentQuality = q.quality;
+      _error = null;
+    });
+    await _player.open(Media(q.url), play: wasPlaying);
+    if (resume > Duration.zero) {
+      // Seek only once the new stream knows its duration.
+      late StreamSubscription sub;
+      sub = _player.stream.duration.listen((d) {
+        if (d > Duration.zero) {
+          sub.cancel();
+          _player.seek(resume < d ? resume : d);
+        }
+      });
+    }
+  }
+
+  // ── Previous / next in playlist ────────────────────────────────────────
+
+  Future<void> _goToSibling(int delta) async {
+    final siblings = widget.siblings;
+    if (siblings == null || siblings.isEmpty) return;
+    final next = _index + delta;
+    if (next < 0 || next >= siblings.length) return;
+    final video = siblings[next];
+    final service = YoutubeService();
+    try {
+      final stream = await service.resolvePlayable(video.id);
+      await widget.store?.recordPlay(
+        videoId: video.id,
+        title: video.title,
+        thumbUrl: video.thumbUrl,
+        playlistName: widget.playlistName ?? '',
+      );
+      if (!mounted) return;
+      setState(() {
+        _index = next;
+        _title = video.title;
+        _currentQuality = stream.quality;
+        _error = null;
+        _qualities = [];
+      });
+      await _player.open(Media(stream.url), play: true);
+      _loadQualities();
+      _scheduleHide();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'مش قادرين نشغّل الفيديو ده دلوقتي');
+      }
+    } finally {
+      service.close();
+    }
   }
 
   // ── Gestures ───────────────────────────────────────────────────────────
@@ -211,17 +380,24 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
 
   // ── UI ─────────────────────────────────────────────────────────────────
 
-
-  @override
   @override
   Widget build(BuildContext context) {
+    final siblings = widget.siblings;
+    final hasPrev = siblings != null && _index > 0;
+    final hasNext = siblings != null && _index < siblings.length - 1;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          Center(child: Video(controller: _controller, controls: NoVideoControls)),
-          _gestureLayer(),
+          Center(
+            child: Video(
+              controller: _controller,
+              controls: NoVideoControls,
+              fit: _fits[_fitIndex].$1,
+            ),
+          ),
+          if (!_locked) _gestureLayer(),
           StreamBuilder<Duration>(
             stream: _player.stream.position,
             initialData: _player.state.position,
@@ -230,48 +406,66 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
                 stream: _player.stream.playing,
                 initialData: _player.state.playing,
                 builder: (context, playSnap) {
-                  return PlayerChrome(
-                    title: widget.title,
-                    qualityLabel: widget.qualityLabel,
-                    position: _scrubbing
-                        ? _scrubPosition
-                        : (posSnap.data ?? Duration.zero),
-                    duration: _player.state.duration,
-                    playing: playSnap.data ?? false,
-                    rate: _rate,
-                    controlsVisible: _controlsVisible,
-                    seekDelta: _seekDelta,
-                    seekForward: _seekForward,
-                    hudVisible: _hudVisible,
-                    hudIsBrightness: _hudIsBrightness,
-                    hudValue: _hudValue,
-                    boosting: _boosting,
-                    errorText: _error,
-                    onBack: () => Navigator.of(context).pop(),
-                    onPlayPause: () {
-                      _player.playOrPause();
-                      _scheduleHide();
-                    },
-                    onCycleSpeed: _cycleSpeed,
-                    onScrubChanged: (v) {
-                      _hideTimer?.cancel();
-                      setState(() {
-                        _scrubbing = true;
-                        _scrubPosition = Duration(
-                          milliseconds:
-                              (v * _player.state.duration.inMilliseconds)
+                  return StreamBuilder<bool>(
+                    stream: _player.stream.buffering,
+                    initialData: _player.state.buffering,
+                    builder: (context, bufSnap) {
+                      return PlayerChrome(
+                        title: _title,
+                        secondaryText: _currentQuality,
+                        position: _scrubbing
+                            ? _scrubPosition
+                            : (posSnap.data ?? Duration.zero),
+                        duration: _player.state.duration,
+                        playing: playSnap.data ?? false,
+                        buffering: bufSnap.data ?? false,
+                        rate: _rate,
+                        controlsVisible: _controlsVisible,
+                        locked: _locked,
+                        fitLabel: _fits[_fitIndex].$2,
+                        hasPrev: hasPrev,
+                        hasNext: hasNext,
+                        seekDelta: _seekDelta,
+                        seekForward: _seekForward,
+                        hudVisible: _hudVisible,
+                        hudIsBrightness: _hudIsBrightness,
+                        hudValue: _hudValue,
+                        boosting: _boosting,
+                        errorText: _error,
+                        onBack: () => Navigator.of(context).pop(),
+                        onPlayPause: () {
+                          _player.playOrPause();
+                          _scheduleHide();
+                        },
+                        onPrev: hasPrev ? () => _goToSibling(-1) : null,
+                        onNext: hasNext ? () => _goToSibling(1) : null,
+                        onCycleSpeed: _cycleSpeed,
+                        onQuality:
+                            _qualities.length > 1 ? _openQualitySheet : null,
+                        onCycleFit: _cycleFit,
+                        onToggleLock: _toggleLock,
+                        onScrubChanged: (v) {
+                          _hideTimer?.cancel();
+                          setState(() {
+                            _scrubbing = true;
+                            _scrubPosition = Duration(
+                              milliseconds: (v *
+                                      _player.state.duration.inMilliseconds)
                                   .round(),
-                        );
-                      });
-                    },
-                    onScrubEnd: (v) {
-                      final target = Duration(
-                        milliseconds:
-                            (v * _player.state.duration.inMilliseconds).round(),
+                            );
+                          });
+                        },
+                        onScrubEnd: (v) {
+                          final target = Duration(
+                            milliseconds:
+                                (v * _player.state.duration.inMilliseconds)
+                                    .round(),
+                          );
+                          setState(() => _scrubbing = false);
+                          _player.seek(target);
+                          _scheduleHide();
+                        },
                       );
-                      setState(() => _scrubbing = false);
-                      _player.seek(target);
-                      _scheduleHide();
                     },
                   );
                 },
@@ -282,7 +476,6 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       ),
     );
   }
-
 
   Widget _gestureLayer() {
     return Row(
@@ -309,5 +502,4 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       child: const SizedBox.expand(),
     );
   }
-
 }

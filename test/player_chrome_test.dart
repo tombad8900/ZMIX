@@ -11,15 +11,22 @@ PlayerChrome _chrome({
   bool boosting = false,
   String? errorText,
   bool controlsVisible = true,
+  bool locked = false,
+  bool hasPrev = true,
+  bool hasNext = true,
 }) {
   return PlayerChrome(
     title: 'فيلم الاختبار الطويل 2024',
-    qualityLabel: '360p',
+    secondaryText: '360p',
     position: const Duration(minutes: 1, seconds: 23),
     duration: const Duration(minutes: 45, seconds: 10),
     playing: true,
     rate: 1.0,
     controlsVisible: controlsVisible,
+    locked: locked,
+    fitLabel: 'ملاءمة',
+    hasPrev: hasPrev,
+    hasNext: hasNext,
     seekDelta: seekDelta,
     seekForward: true,
     hudVisible: hudVisible,
@@ -29,7 +36,12 @@ PlayerChrome _chrome({
     errorText: errorText,
     onBack: () {},
     onPlayPause: () {},
+    onPrev: () {},
+    onNext: () {},
     onCycleSpeed: () {},
+    onQuality: () {},
+    onCycleFit: () {},
+    onToggleLock: () {},
     onScrubChanged: (_) {},
     onScrubEnd: (_) {},
   );
@@ -52,12 +64,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   }
 
-  testWidgets('player chrome controls visible', (tester) async {
+  testWidgets('player chrome: Zangetsu-layout controls', (tester) async {
     await pump(tester, _chrome());
     expect(find.text('1:23'), findsOneWidget);
     expect(find.text('45:10'), findsOneWidget);
     expect(find.text('360p'), findsOneWidget);
     expect(find.text('1.0x'), findsOneWidget);
+    expect(find.text('ملاءمة'), findsOneWidget);
+    expect(find.byIcon(Icons.skip_previous_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.hd_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.aspect_ratio_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.lock_open_rounded), findsOneWidget);
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/player_chrome_controls.png'),
@@ -70,6 +88,17 @@ void main() {
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/player_chrome_seek_hud_boost.png'),
+    );
+  });
+
+  testWidgets('player chrome locked: only the lock affordance', (tester) async {
+    await pump(tester, _chrome(locked: true, controlsVisible: false));
+    expect(find.byIcon(Icons.lock_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.hd_rounded), findsNothing);
+    expect(find.byIcon(Icons.skip_next_rounded), findsNothing);
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/player_chrome_locked.png'),
     );
   });
 

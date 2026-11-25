@@ -82,6 +82,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
             title: video.title,
             streamUrl: stream.url,
             qualityLabel: stream.quality,
+            videoId: video.id,
+            siblings: widget.playlist.videos,
+            videoIndex: widget.playlist.videos.indexWhere((v) => v.id == video.id),
+            store: widget.store,
+            playlistName: widget.playlist.name,
           ),
         ),
       );
