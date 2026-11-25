@@ -1,0 +1,278 @@
+--- upstream/features/player/player_seek_bar.dart
++++ zmix/lib/player/player_seek_bar.dart
+@@ -1,16 +1,23 @@
+-// Scrubber row, its buffered-range track and the thumbnail preview bubble.
+-part of 'player_screen.dart';
++// Ported from Zangetsu (https://github.com/Spyou/Zangetsu), GPL-3.0,
++// features/player/player_seek_bar.dart at upstream commit
++// 772fac56d265b238b90118bd68abe2e7353b1f6e.
++// Literal copy with integration edits only; each edit is marked ZMIX-EDIT.
++// ZMIX remains GPL-3.0.
++
++part of 'player_controls_overlay.dart';
+ 
+ class PlayerSeekBar extends StatefulWidget {
+   const PlayerSeekBar({
+     super.key,
+-    required this.controller,
++    required this.player, // ZMIX-EDIT: media_kit Player directly (no PlayerCubit)
++    required this.onSeek, // ZMIX-EDIT: seek callback (was controller.seekTo)
+     required this.duration,
+     required this.onInteract,
+     this.trailing,
+   });
+ 
+-  final PlayerCubit controller;
++  final ZmixPlayerSurface player; // ZMIX-EDIT
++  final void Function(Duration position) onSeek;
+   final Duration duration;
+   final VoidCallback onInteract;
+ 
+@@ -34,10 +41,8 @@
+   // a GPU-bound ~20fps. Sample to ~4Hz: invisible for a slowly-advancing thumb,
+   // and scrubbing stays perfectly smooth because it runs off _dragMs, not this.
+   late final Stream<Duration> _livePosition = widget
+-      .controller
+       .player
+-      .stream
+-      .position
++      .positionStream
+       .map((p) => Duration(milliseconds: (p.inMilliseconds ~/ 250) * 250))
+       .distinct();
+ 
+@@ -45,73 +50,12 @@
+   // (a negative countdown, e.g. "−1:00"), CloudStream-style.
+   bool _showRemaining = false;
+ 
+-  SeekPreview? _preview;
+-  String? _prewarmedUri;
+-
+-  bool get _supportsOnlinePreview {
+-    if (!Platform.isAndroid || sl<AppMode>().isTv) return false;
+-    final scheme = Uri.tryParse(widget.controller.previewUri ?? '')?.scheme;
+-    return scheme == 'https' || scheme == 'http';
+-  }
+-
+-  void _maybePrewarm() {
+-    if (widget.duration <= Duration.zero || _dragMs != null) return;
+-    final c = widget.controller;
+-    final uri = c.previewUri;
+-    if (uri == null || uri == _prewarmedUri || c.isLocalMedia) return;
+-    if (!_supportsOnlinePreview) return;
+-    _prewarmedUri = uri;
+-    WidgetsBinding.instance.addPostFrameCallback((_) {
+-      if (!mounted) return;
+-      if (_dragMs == null) {
+-        _ensurePreview();
+-        _warmPreview(c.player.state.position);
+-      }
+-    });
+-  }
+-
+-  void _warmPreview(Duration position) {
+-    _preview?.warm(
+-      position,
+-      duration: widget.duration,
+-      isBuffering: () => widget.controller.player.state.buffering,
+-    );
+-  }
+-
+-  bool get _previewEnabled {
+-    final c = widget.controller;
+-    if (c.previewUri == null) return false;
+-    return c.isLocalMedia || _supportsOnlinePreview;
+-  }
+-
+-  void _ensurePreview() {
+-    final c = widget.controller;
+-    if (!_previewEnabled) {
+-      _preview?.dispose();
+-      _preview = null;
+-      return;
+-    }
+-    // Recreate if the active source changed (quality/source switch) so we don't
+-    // preview a stale URL.
+-    if (_preview != null && _preview!.uri != c.previewUri) {
+-      _preview!.dispose();
+-      _preview = null;
+-    }
+-    _preview ??= SeekPreview(
+-      uri: c.previewUri!,
+-      headers: c.previewHeaders,
+-      local: c.isLocalMedia,
+-    );
+-  }
+-
+-  void _requestPreview(double ms) =>
+-      _preview?.request(Duration(milliseconds: ms.round()));
+-
+-  @override
+-  void dispose() {
+-    _preview?.dispose();
+-    super.dispose();
+-  }
++  // ZMIX-EDIT: upstream's scrub-preview bubble (SeekPreview storyboard
++  // frames) is omitted - ZMIX has no storyboard/preview-frame source for
++  // YouTube streams. The time bubble below is kept; the preview box above
++  // it renders nothing (upstream's own fallback when no preview exists).
++  // _maybePrewarm/_warmPreview/_ensurePreview/_requestPreview are removed
++  // with it; the slider callbacks below keep their surrounding logic.
+ 
+   String _fmt(Duration d) {
+     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+@@ -122,7 +66,6 @@
+ 
+   @override
+   Widget build(BuildContext context) {
+-    _maybePrewarm();
+     final totalMs = widget.duration.inMilliseconds;
+     final max = totalMs > 0 ? totalMs.toDouble() : 1.0;
+     // Playback time runs left to right even when the app language is RTL.
+@@ -130,7 +73,7 @@
+       textDirection: TextDirection.ltr,
+       child: StreamBuilder<Duration>(
+         stream: _livePosition,
+-        initialData: widget.controller.player.state.position,
++        initialData: widget.player.state.position,
+         builder: (context, snap) {
+           final streamMs = (snap.data ?? Duration.zero).inMilliseconds
+               .clamp(0, max.toInt())
+@@ -214,7 +157,7 @@
+                         SizedBox(
+                           width: w,
+                           child: StreamBuilder<Duration>(
+-                            stream: widget.controller.player.stream.buffer,
++                            stream: widget.player.bufferStream,
+                             builder: (context, bufSnap) {
+                               final bufMs = (bufSnap.data ?? Duration.zero)
+                                   .inMilliseconds;
+@@ -230,19 +173,10 @@
+                                     bufferedColor: Colors.white.withValues(
+                                       alpha: 0.55,
+                                     ),
+-                                    marks: [
+-                                      if (totalMs > 0 &&
+-                                          sl<PlaybackPrefs>().skipIntro)
+-                                        for (final iv
+-                                            in widget
+-                                                .controller
+-                                                .currentSkips) ...[
+-                                          (iv.start.inMilliseconds / totalMs)
+-                                              .clamp(0.0, 1.0),
+-                                          (iv.end.inMilliseconds / totalMs)
+-                                              .clamp(0.0, 1.0),
+-                                        ],
+-                                    ],
++                                    // ZMIX-EDIT: no AniSkip chapter/skip
++                                    // source exists for YouTube playlists,
++                                    // so the marker list stays empty.
++                                    marks: const [],
+                                   ),
+                                   thumbColor: Colors.white,
+                                   overlayColor: AppColors.accentSoft,
+@@ -275,16 +209,13 @@
+                                   onChangeStart: totalMs <= 0
+                                       ? null
+                                       : (v) {
+-                                          _ensurePreview();
+                                           setState(() => _dragMs = v);
+-                                          _requestPreview(v);
+                                           widget.onInteract();
+                                         },
+                                   onChanged: totalMs <= 0
+                                       ? null
+                                       : (v) {
+                                           setState(() => _dragMs = v);
+-                                          _requestPreview(v);
+                                           widget.onInteract();
+                                         },
+                                   onChangeEnd: totalMs <= 0
+@@ -293,9 +224,8 @@
+                                           final position = Duration(
+                                             milliseconds: v.round(),
+                                           );
+-                                          widget.controller.seekTo(position);
++                                          widget.onSeek(position);
+                                           setState(() => _dragMs = null);
+-                                          _warmPreview(position);
+                                           widget.onInteract();
+                                         },
+                                 ),
+@@ -309,7 +239,7 @@
+                             bottom: 26,
+                             width: bubbleW,
+                             child: _PreviewBubble(
+-                              preview: _preview,
++                              preview: null, // ZMIX-EDIT: no SeekPreview source
+                               time: _fmt(shownPos),
+                             ),
+                           ),
+@@ -429,54 +359,16 @@
+ class _PreviewBubble extends StatelessWidget {
+   const _PreviewBubble({required this.preview, required this.time});
+ 
+-  final SeekPreview? preview;
++  // ZMIX-EDIT: typed as the absent SeekPreview upstream; always null here,
++  // which is upstream's own "no preview" branch (time bubble only).
++  final Object? preview;
+   final String time;
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final p = preview;
+     return Column(
+       mainAxisSize: MainAxisSize.min,
+       children: [
+-        if (p != null)
+-          ValueListenableBuilder<bool>(
+-            valueListenable: p.timedOut,
+-            builder: (context, timedOut, _) {
+-              if (timedOut) return const SizedBox.shrink();
+-              return ValueListenableBuilder<Uint8List?>(
+-                valueListenable: p.frame,
+-                builder: (context, bytes, _) {
+-                  return Padding(
+-                    padding: const EdgeInsets.only(bottom: 4),
+-                    child: ClipRRect(
+-                      borderRadius: BorderRadius.circular(8),
+-                      child: Container(
+-                        width: 168,
+-                        height: 94,
+-                        color: Colors.black,
+-                        child: bytes == null
+-                            ? const Center(
+-                                child: SizedBox(
+-                                  width: 20,
+-                                  height: 20,
+-                                  child: CircularProgressIndicator(
+-                                    strokeWidth: 2,
+-                                    color: Colors.white,
+-                                  ),
+-                                ),
+-                              )
+-                            : Image.memory(
+-                                bytes,
+-                                fit: BoxFit.cover,
+-                                gaplessPlayback: true,
+-                              ),
+-                      ),
+-                    ),
+-                  );
+-                },
+-              );
+-            },
+-          ),
+         DecoratedBox(
+           decoration: BoxDecoration(
+             color: Colors.black.withValues(alpha: 0.8),
+@@ -498,10 +390,3 @@
+   }
+ }
+ 
+-// ─────────────────────────────────────────────────────────────────────────────
+-// Small bits.
+-// ─────────────────────────────────────────────────────────────────────────────
+-
+-// Netflix-style "Skip intro/ending" pill — fades + slides up when it appears
+-// (it's mounted only while inside an AniSkip interval), with a ripple + a
+-// premium rounded look. A press-scale gives tactile feedback.

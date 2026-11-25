@@ -1,5 +1,5 @@
---- /tmp/zangetsu/lib/core/ui/poster_card.dart	2026-11-25 13:15:47.594612750 +0300
-+++ lib/ui/poster_card.dart	2026-11-25 13:32:02.189882254 +0300
+--- upstream/core/ui/poster_card.dart
++++ zmix/lib/ui/poster_card.dart
 @@ -1,20 +1,27 @@
 +// Ported from Zangetsu (https://github.com/Spyou/Zangetsu), GPL-3.0,
 +// lib/core/ui/poster_card.dart at upstream commit
@@ -42,7 +42,7 @@
  const _posterTextScrim = LinearGradient(
    begin: Alignment.bottomCenter,
    end: Alignment.topCenter,
-@@ -27,125 +34,34 @@
+@@ -27,125 +34,38 @@
      super.key,
      required this.title,
      this.imageUrl,
@@ -69,6 +69,10 @@
    final String? imageUrl;
 -  final String? wideImageUrl;
 -  final Map<String, String>? headers;
++
++  /// Test seam: when set (golden/widget tests only), artwork is decoded from
++  /// this provider instead of the network so renders carry real images.
++  static ImageProvider Function(String url)? debugImageProvider;
    final VoidCallback? onTap;
    final VoidCallback? onLongPress;
  
@@ -175,7 +179,7 @@
  int _responsiveColumns(
    int desired, {
    required double availableWidth,
-@@ -159,15 +75,13 @@
+@@ -159,15 +79,13 @@
    return desired.clamp(1, widthLimit).toInt();
  }
  
@@ -196,7 +200,7 @@
      availableWidth: availableWidth,
      minimumCellWidth: wide ? 110 : 72,
      spacing: 12,
-@@ -175,196 +89,55 @@
+@@ -175,196 +93,64 @@
    );
  }
  
@@ -378,6 +382,15 @@
      );
 -    Widget networkArtwork(String url, [Set<String> failedUrls = const {}]) {
 +    Widget networkArtwork(String url) {
++      final debugProvider = PosterCard.debugImageProvider;
++      if (debugProvider != null) {
++        return Image(
++          image: ResizeImage(debugProvider(url), width: memW),
++          fit: artFit,
++          errorBuilder: (_, _, _) =>
++              const ColoredBox(color: Color(0xFF20212A)),
++        );
++      }
        return CachedNetworkImage(
          imageUrl: url,
 -        cacheManager: AppImageCache.manager,
@@ -407,7 +420,7 @@
        );
      }
  
-@@ -389,94 +162,14 @@
+@@ -389,94 +175,14 @@
                      fit: StackFit.expand,
                      children: [
                        if (artUrl == null)
@@ -505,7 +518,7 @@
                          Positioned(
                            left: 6,
                            bottom: 6,
-@@ -484,49 +177,16 @@
+@@ -484,49 +190,16 @@
                            child: Row(
                              crossAxisAlignment: CrossAxisAlignment.end,
                              children: [
@@ -565,7 +578,7 @@
                              ],
                            ),
                          ),
-@@ -534,18 +194,14 @@
+@@ -534,18 +207,14 @@
                    ),
                  ),
                ),
@@ -587,7 +600,7 @@
                      width: widget.cellWidth,
                      maxHeight: titleBoxHeight,
                      inside: false,
-@@ -560,152 +216,55 @@
+@@ -560,152 +229,55 @@
    }
  }
  
@@ -615,8 +628,8 @@
    final int maxLines;
    final TextStyle? textStyle;
 -  final bool addonOverlay;
- 
-   @override
+-
+-  @override
 -  State<PosterCardTitle> createState() => _PosterCardTitleState();
 -}
 -
@@ -637,8 +650,8 @@
 -    setState(() {});
 -    _loadLogo();
 -  }
--
--  @override
+ 
+   @override
 -  void didUpdateWidget(PosterCardTitle oldWidget) {
 -    super.didUpdateWidget(oldWidget);
 -    if (oldWidget.title != widget.title ||
@@ -759,7 +772,7 @@
  double posterCellHeight(
    double cellWidth, {
    TextScaler textScaler = TextScaler.noScaling,
-@@ -739,109 +298,7 @@
+@@ -739,109 +311,7 @@
        titleInside: titleInside,
      );
  
@@ -870,7 +883,7 @@
  class _PosterTag extends StatelessWidget {
    const _PosterTag(this.text, {this.maxWidth});
    final String text;
-@@ -861,9 +318,7 @@
+@@ -861,9 +331,7 @@
            text,
            maxLines: 1,
            overflow: TextOverflow.ellipsis,

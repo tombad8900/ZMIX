@@ -1,0 +1,15 @@
+--- upstream/core/ui/frosted_surface.dart
++++ zmix/lib/player/frosted_surface.dart
+@@ -1,6 +1,11 @@
++// Ported from Zangetsu (https://github.com/Spyou/Zangetsu), GPL-3.0,
++// core/ui/frosted_surface.dart at upstream commit 772fac56d265b238b90118bd68abe2e7353b1f6e.
++// Literal copy with integration edits only; each edit is marked ZMIX-EDIT.
++// ZMIX remains GPL-3.0.
++
+ import 'dart:ui';
+ import 'package:flutter/material.dart';
+-import '../theme/app_colors.dart';
++import 'app_colors.dart';
+ 
+ /// Apple-style vibrancy. [blur] true → real BackdropFilter (use ONLY on static
+ /// overlays: sheets, controls, nav — never inside scrolling content). [blur]

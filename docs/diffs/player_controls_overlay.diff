@@ -1,49 +1,131 @@
---- /tmp/zangetsu/lib/features/player/player_controls_overlay.dart	2026-11-25 13:15:47.609140775 +0300
-+++ lib/player_chrome.dart	2026-11-25 13:30:36.217999417 +0300
-@@ -1,896 +1,457 @@
+--- upstream/features/player/player_controls_overlay.dart
++++ zmix/lib/player/player_controls_overlay.dart
+@@ -1,156 +1,176 @@
 -// The controls laid over the video: top bar, centre transport, bottom block.
 -part of 'player_screen.dart';
++// Ported from Zangetsu (https://github.com/Spyou/Zangetsu), GPL-3.0,
++// features/player/player_controls_overlay.dart at upstream commit
++// 772fac56d265b238b90118bd68abe2e7353b1f6e.
++// Literal copy with integration edits only; each edit is marked ZMIX-EDIT.
++// Edits: PlayerCubit/PlayerState replaced by a plain adapter surface (media_kit
++// Player + explicit fields/callbacks); l10n lookups replaced by inline Arabic
++// strings; features ZMIX does not have (cast, decoder, enhance, colour,
++// snapshot, sleep timer, PiP, ambient, chat, info panel, episodes panel,
++// sources, subtitle/audio tracks, MegaSkip, settings shortcut) take nullable
++// callbacks and drop out through upstream's own null-skip mechanism.
++// ZMIX remains GPL-3.0.
++
++import 'dart:async';
++
 +import 'package:flutter/material.dart';
++import 'package:media_kit/media_kit.dart';
++
++import 'app_colors.dart';
++import 'app_text.dart';
++import 'frosted_surface.dart';
++import 'player_controls_config.dart';
++
++part 'player_controls_widgets.dart';
++part 'player_seek_bar.dart';
++
++/// ZMIX-EDIT: the playback-engine surface the overlay needs. Upstream this
++/// was PlayerCubit around media_kit; ZMIX wires media_kit's Player through
++/// [MediaKitPlayerSurface], and widget tests substitute a fake (a real
++/// media_kit Player needs native libmpv and cannot exist in a VM test).
++/// Only the members the ported code actually reads are exposed.
++abstract class ZmixPlayerSurface {
++  ZmixPlayerSnapshot get state;
++  Stream<Duration> get positionStream;
++  Stream<Duration> get bufferStream;
++  Stream<Duration> get durationStream;
++  Stream<int?> get widthStream;
++  Stream<bool> get bufferingStream;
++  Stream<bool> get playingStream;
++}
++
++/// Immutable view of the engine state fields the ported code reads.
++class ZmixPlayerSnapshot {
++  const ZmixPlayerSnapshot({
++    this.position = Duration.zero,
++    this.duration = Duration.zero,
++    this.buffering = false,
++    this.playing = false,
++    this.width,
++    this.height,
++  });
++
++  final Duration position;
++  final Duration duration;
++  final bool buffering;
++  final bool playing;
++  final int? width;
++  final int? height;
++}
++
++/// Live media_kit-backed surface used by the real player page.
++class MediaKitPlayerSurface implements ZmixPlayerSurface {
++  MediaKitPlayerSurface(this.player);
++
++  final Player player;
++
++  @override
++  ZmixPlayerSnapshot get state => ZmixPlayerSnapshot(
++        position: player.state.position,
++        duration: player.state.duration,
++        buffering: player.state.buffering,
++        playing: player.state.playing,
++        width: player.state.width,
++        height: player.state.height,
++      );
++
++  @override
++  Stream<Duration> get positionStream => player.stream.position;
++  @override
++  Stream<Duration> get bufferStream => player.stream.buffer;
++  @override
++  Stream<Duration> get durationStream => player.stream.duration;
++  @override
++  Stream<int?> get widthStream => player.stream.width;
++  @override
++  Stream<bool> get bufferingStream => player.stream.buffering;
++  @override
++  Stream<bool> get playingStream => player.stream.playing;
++}
  
 -class _ControlsOverlay extends StatelessWidget {
 -  const _ControlsOverlay({
 -    required this.controller,
 -    required this.state,
--    required this.showTitle,
-+/// Player overlay for ZMIX.
-+///
-+/// The layout architecture is adapted from Zangetsu's player controls
-+/// (https://github.com/Spyou/Zangetsu), GPL-3.0:
-+///  - top scrim + two-line title bar (primary title, secondary quality line)
-+///    with a lock button;
-+///  - centre transport: previous / play-pause disc / next;
-+///  - one bottom block: seek row (position · slider · total-or-remaining)
-+///    above a row of translucent button capsules (pickers left, fit right);
-+///  - coral accent #FF4D57 and the scrim alpha values from the same source.
-+///
-+/// Adapted to ZMIX's stateless-chrome/player-page split and RTL Arabic UI;
-+/// ZMIX remains GPL-3.0. No code is copied verbatim without adaptation.
-+class PlayerChrome extends StatelessWidget {
-+  const PlayerChrome({
++class PlayerControlsOverlay extends StatelessWidget {
++  const PlayerControlsOverlay({
 +    super.key,
-+    required this.title,
-+    required this.position,
++    required this.player, // ZMIX-EDIT
++    required this.episodeNumber, // ZMIX-EDIT: 1-based position in the playlist
++    required this.episodeTitle, // ZMIX-EDIT: current video's own title
++    required this.multiEpisode, // ZMIX-EDIT
++    required this.hasNext, // ZMIX-EDIT
++    required this.hasQualityChoices, // ZMIX-EDIT
++    this.activeQualityLabel, // ZMIX-EDIT
++    required this.onTogglePlay, // ZMIX-EDIT
++    required this.onSeek, // ZMIX-EDIT: seek callback for the bar
++    required this.onNext, // ZMIX-EDIT: null = no next
+     required this.showTitle,
      required this.duration,
--    required this.onDurationChanged,
--    required this.onInteract,
--    required this.onBack,
--    required this.onSpeed,
+     required this.onDurationChanged,
+     required this.onInteract,
+     required this.onBack,
+     required this.onSpeed,
 -    required this.onAudioSubs,
--    required this.onQuality,
+     required this.onQuality,
 -    required this.onSources,
--    required this.onLock,
--    required this.onRotate,
--    required this.portraitMode,
+     required this.onLock,
+     required this.onRotate,
+     required this.portraitMode,
 -    required this.onSettings,
--    required this.barConfig,
--    required this.onZoom,
--    required this.zoomLabel,
--    required this.onPrev,
+     required this.barConfig,
+     required this.onZoom,
+     required this.zoomLabel,
+     required this.onPrev,
 -    required this.onSleep,
 -    required this.sleepActive,
 -    required this.decoderLabel,
@@ -60,69 +142,53 @@
 -    this.onChat,
 -    this.onInfo,
 -    this.infoOpen = false,
--    this.showQuality = false,
+     this.showQuality = false,
 -    required this.onScreenshot,
 -    required this.onEnhance,
 -    required this.enhanceActive,
 -    required this.onColorProfile,
--    this.visible = true,
-+    required this.playing,
-+    required this.rate,
-+    this.secondaryText,
-+    this.buffering = false,
-+    this.controlsVisible = true,
-+    this.locked = false,
-+    this.fitLabel = '',
-+    this.hasPrev = false,
-+    this.hasNext = false,
-+    this.seekDelta = 0,
-+    this.seekForward = true,
-+    this.hudVisible = false,
-+    this.hudIsBrightness = false,
-+    this.hudValue = 0,
-+    this.boosting = false,
-+    this.errorText,
-+    this.onBack,
-+    this.onPlayPause,
-+    this.onPrev,
-+    this.onNext,
-+    this.onCycleSpeed,
-+    this.onQuality,
-+    this.onCycleFit,
-+    this.onToggleLock,
-+    this.onScrubChanged,
-+    this.onScrubEnd,
+     this.visible = true,
++    this.transportHidden = false, // ZMIX-EDIT
    });
  
 -  final PlayerCubit controller;
 -  final PlayerState state;
--  final String? showTitle;
-+  static const Color accent = Color(0xFFFF4D57);
-+
-+  final String title;
-+  final String? secondaryText;
-+  final Duration position;
++  final ZmixPlayerSurface player; // ZMIX-EDIT
++  final int episodeNumber; // ZMIX-EDIT
++  final String episodeTitle; // ZMIX-EDIT
++  final bool multiEpisode; // ZMIX-EDIT
++  final bool hasNext; // ZMIX-EDIT
++  final bool hasQualityChoices; // ZMIX-EDIT
++  final String? activeQualityLabel; // ZMIX-EDIT
++  final VoidCallback onTogglePlay; // ZMIX-EDIT
++  final void Function(Duration position) onSeek; // ZMIX-EDIT
++  final VoidCallback? onNext; // ZMIX-EDIT
+   final String? showTitle;
    final Duration duration;
--  final ValueChanged<Duration> onDurationChanged;
--  final VoidCallback onInteract;
--  final VoidCallback onBack;
+   final ValueChanged<Duration> onDurationChanged;
+   final VoidCallback onInteract;
+   final VoidCallback onBack;
 -  final VoidCallback onSpeed;
 -  final VoidCallback onAudioSubs;
 -  final VoidCallback onQuality;
 -  final VoidCallback onSources;
--  final VoidCallback onLock;
++  final VoidCallback? onSpeed; // ZMIX-EDIT: nullable - null drops the button
++  final VoidCallback? onQuality; // ZMIX-EDIT: nullable
+   final VoidCallback onLock;
 -  final VoidCallback
--  onRotate; // flip between locked landscape and locked portrait
--  final bool portraitMode; // true while watching upright
++  final VoidCallback?
+   onRotate; // flip between locked landscape and locked portrait
+   final bool portraitMode; // true while watching upright
 -  final VoidCallback onSettings;
--
--  /// The user's control arrangement — which bar each control sits on, in what
--  /// order. Drives both bars; anything not placed is reachable via ⋮ More.
--  final PlayerControlsConfig barConfig;
--
+ 
+   /// The user's control arrangement — which bar each control sits on, in what
+   /// order. Drives both bars; anything not placed is reachable via ⋮ More.
+   final PlayerControlsConfig barConfig;
+ 
 -  final VoidCallback onZoom;
--  final String zoomLabel;
--  final VoidCallback? onPrev; // null = no previous episode
++  final VoidCallback? onZoom; // ZMIX-EDIT: nullable
+   final String zoomLabel;
+   final VoidCallback? onPrev; // null = no previous episode
 -  final VoidCallback onSleep;
 -  final bool sleepActive;
 -  final String decoderLabel; // current decoder short label (HW/HW+/SW/AUTO)
@@ -140,17 +206,26 @@
 -  final VoidCallback? onChat; // in-room chat toggle (null = no active room)
 -  final VoidCallback? onInfo; // toggle the info panel (null = no fields picked)
 -  final bool infoOpen; // whether the info panel is currently shown
--  final bool
--  showQuality; // plain quality text on the top-bar right (with controls)
+   final bool
+   showQuality; // plain quality text on the top-bar right (with controls)
 -  final VoidCallback onScreenshot; // grab the current frame → gallery
 -  final VoidCallback onEnhance; // opens the video-enhancement (upscaler) picker
 -  final bool enhanceActive; // an upscaling preset is currently on
 -  final VoidCallback onColorProfile; // opens the colour-profile picker
--  final bool visible; // drives the bars' slide-in (top drops, bottom rises)
--
--  /// Overflow panel that slides in from the RIGHT (like the episodes panel) —
--  /// holds the occasional actions so the control bars stay clean.
--  void _showMore(BuildContext context) {
+   final bool visible; // drives the bars' slide-in (top drops, bottom rises)
+ 
++  /// ZMIX-EDIT: ZMIX's double-tap seek feedback pill sits at the exact
++  /// center where this transport renders, so the page suppresses the
++  /// transport while seek feedback is up instead of overlapping it.
++  final bool transportHidden;
++
+   /// Overflow panel that slides in from the RIGHT (like the episodes panel) —
+   /// holds the occasional actions so the control bars stay clean.
++  /// ZMIX-EDIT: upstream's panel rows target features ZMIX does not have
++  /// (decoder, enhance, colour, snapshot, sleep, PiP, minimize, engine
++  /// switch, ambient). They are omitted, not hidden behind dead buttons;
++  /// the panel keeps upstream's surface/motion so future rows drop in.
+   void _showMore(BuildContext context) {
 -    showPlayerMorePanel(
 -      context: context,
 -      onInteract: onInteract,
@@ -195,62 +270,51 @@
 -        animatePortraitEntrance &&
 -        MediaQuery.orientationOf(context) == Orientation.portrait;
 -    final reduced = portrait && MediaQuery.disableAnimationsOf(context);
--    onInteract();
--    showGeneralDialog<void>(
--      context: context,
--      barrierDismissible: true,
--      barrierLabel: 'More',
--      barrierColor: Colors.black54,
+     onInteract();
+     showGeneralDialog<void>(
+       context: context,
+       barrierDismissible: true,
+       barrierLabel: 'More',
+       barrierColor: Colors.black54,
 -      transitionDuration: reduced
 -          ? Duration.zero
 -          : const Duration(milliseconds: 240),
--      pageBuilder: (ctx, _, _) {
--        // Same width and surface as the episodes panel — this slides in from
--        // the same edge with the same motion, so looking different was just
--        // two panels wearing two skins. 40% was wider than it needed to be
--        // for a short list of labels, too.
--        final w = (MediaQuery.of(ctx).size.width * 0.33).clamp(250.0, 360.0);
--        return Align(
--          alignment: AlignmentDirectional.centerEnd,
--          child: Material(
--            color: Colors.transparent,
--            child: FrostedSurface(
--              blur: true,
--              opacity: 0.88,
--              borderRadius: const BorderRadius.horizontal(
--                left: Radius.circular(20),
--              ),
++      transitionDuration: const Duration(milliseconds: 240),
+       pageBuilder: (ctx, _, _) {
+         // Same width and surface as the episodes panel — this slides in from
+         // the same edge with the same motion, so looking different was just
+@@ -167,9 +187,6 @@
+               borderRadius: const BorderRadius.horizontal(
+                 left: Radius.circular(20),
+               ),
 -              // Left inset dropped for the same reason as the episodes panel:
 -              // this is pinned to the RIGHT edge, so padding it away from a
 -              // cutout on the opposite side just eats its width.
--              child: SafeArea(
--                left: false,
--                child: SizedBox(
--                  width: w,
--                  height: double.infinity,
--                  child: Column(
--                    crossAxisAlignment: CrossAxisAlignment.stretch,
--                    children: [
--                      Padding(
--                        padding: const EdgeInsets.fromLTRB(16, 13, 8, 9),
--                        child: Row(
--                          children: [
--                            Expanded(
+               child: SafeArea(
+                 left: false,
+                 child: SizedBox(
+@@ -183,14 +200,15 @@
+                         child: Row(
+                           children: [
+                             Expanded(
 -                              child: Text(ctx.l10n.more, style: AppText.title),
--                            ),
--                            IconButton(
--                              icon: const Icon(
--                                Icons.close_rounded,
--                                color: AppColors.textSecondary,
--                              ),
++                              // ZMIX-EDIT: inline Arabic (was ctx.l10n.more)
++                              child: Text('المزيد', style: AppText.title),
+                             ),
+                             IconButton(
+                               icon: const Icon(
+                                 Icons.close_rounded,
+                                 color: AppColors.textSecondary,
+                               ),
 -                              tooltip: ctx.l10n.close,
--                              onPressed: () => Navigator.of(ctx).pop(),
--                            ),
--                          ],
--                        ),
--                      ),
--                      const Divider(color: AppColors.hairline, height: 1),
--                      const SizedBox(height: 4),
++                              tooltip: 'إغلاق', // ZMIX-EDIT (was ctx.l10n.close)
+                               onPressed: () => Navigator.of(ctx).pop(),
+                             ),
+                           ],
+@@ -198,89 +216,8 @@
+                       ),
+                       const Divider(color: AppColors.hairline, height: 1),
+                       const SizedBox(height: 4),
 -                      _MoreRow(
 -                        icon: Icons.memory_rounded,
 -                        label: ctx.l10n.decoderColon(decoderLabel),
@@ -334,64 +398,15 @@
 -                          onAmbientToggle();
 -                        },
 -                      ),
--                    ],
-+  final bool playing;
-+  final bool buffering;
-+  final double rate;
-+  final bool controlsVisible;
-+  final bool locked;
-+  final String fitLabel;
-+  final bool hasPrev;
-+  final bool hasNext;
-+  final int seekDelta;
-+  final bool seekForward;
-+  final bool hudVisible;
-+  final bool hudIsBrightness;
-+  final double hudValue;
-+  final bool boosting;
-+  final String? errorText;
-+  final VoidCallback? onBack;
-+  final VoidCallback? onPlayPause;
-+  final VoidCallback? onPrev;
-+  final VoidCallback? onNext;
-+  final VoidCallback? onCycleSpeed;
-+  final VoidCallback? onQuality;
-+  final VoidCallback? onCycleFit;
-+  final VoidCallback? onToggleLock;
-+  final ValueChanged<double>? onScrubChanged;
-+  final ValueChanged<double>? onScrubEnd;
-+
-+  static String fmt(Duration d) {
-+    final h = d.inHours;
-+    final m = d.inMinutes.remainder(60);
-+    final s = d.inSeconds.remainder(60);
-+    String two(int v) => v.toString().padLeft(2, '0');
-+    return h > 0 ? '$h:${two(m)}:${two(s)}' : '$m:${two(s)}';
-+  }
-+
-+  @override
-+  Widget build(BuildContext context) {
-+    return Stack(
-+      fit: StackFit.expand,
-+      children: [
-+        // Scrim values adapted from Zangetsu's _ControlsOverlay.
-+        if (controlsVisible && !locked) ...[
-+          const Positioned(
-+            top: 0, left: 0, right: 0, height: 110,
-+            child: IgnorePointer(
-+              child: DecoratedBox(
-+                decoration: BoxDecoration(
-+                  gradient: LinearGradient(
-+                    begin: Alignment.topCenter,
-+                    end: Alignment.bottomCenter,
-+                    colors: [Color(0x59000000), Color(0x00000000)],
++                      // ZMIX-EDIT: no occasional-action rows exist yet; the
++                      // panel opens only when a future feature adds one.
+                     ],
                    ),
                  ),
-               ),
-             ),
+@@ -289,35 +226,11 @@
            ),
--        );
--      },
+         );
+       },
 -      transitionBuilder: (ctx, anim, _, child) => portrait
 -          ? (reduced
 -                ? child
@@ -418,43 +433,21 @@
 -              position: Tween(begin: const Offset(1, 0), end: Offset.zero)
 -                  .animate(
 -                    CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
-+          const Positioned(
-+            bottom: 0, left: 0, right: 0, height: 170,
-+            child: IgnorePointer(
-+              child: DecoratedBox(
-+                decoration: BoxDecoration(
-+                  gradient: LinearGradient(
-+                    begin: Alignment.bottomCenter,
-+                    end: Alignment.topCenter,
-+                    colors: [Color(0x8C000000), Color(0x00000000)],
-                   ),
+-                  ),
 -              child: child,
-+                ),
-+              ),
-             ),
-+          ),
-+        ],
-+        if (seekDelta != 0 && !locked) _seekIndicator(),
-+        if (hudVisible && !locked) _hud(),
-+        if (boosting && !locked) _boostBadge(),
-+        if (controlsVisible || locked) _topBar(),
-+        if (controlsVisible && !locked) _centerTransport(),
-+        if (controlsVisible && !locked) _bottomBlock(context),
-+        if (errorText != null && !locked) _errorBanner(),
-+      ],
+-            ),
++      transitionBuilder: (ctx, anim, _, child) => SlideTransition(
++        position: Tween(begin: const Offset(1, 0), end: Offset.zero)
++            .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
++        child: child,
++      ),
      );
    }
  
--  /// Whether [id] sits on any bar. Used so a control that's already placed
--  /// doesn't also get drawn by one of the player's own conditional buttons.
--  bool _placedAnywhere(String id) => barConfig.slotOf(id) != ControlSlot.hidden;
--
--  /// Top-bar versions of the arrangeable controls. Plain [IconButton]s rather
--  /// than the bottom bar's chips, so anything moved up here matches the row
--  /// it lands in instead of importing the bottom bar's look.
--  List<Widget> _topButtons(BuildContext context, List<String> ids) {
--    final out = <Widget>[];
--    for (final id in ids) {
+@@ -331,55 +244,17 @@
+   List<Widget> _topButtons(BuildContext context, List<String> ids) {
+     final out = <Widget>[];
+     for (final id in ids) {
 -      switch (id) {
 -        case 'cast':
 -          // Android only, and only where the Cast framework is actually
@@ -483,101 +476,87 @@
 -        case 'info':
 -          if (onInfo != null) {
 -            out.add(
-+  Widget _topBar() {
-+    return Align(
-+      alignment: Alignment.topCenter,
-+      child: SafeArea(
-+        bottom: false,
-+        left: false,
-+        right: false,
-+        child: Padding(
-+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 4),
-+          child: Row(
-+            children: [
-               IconButton(
+-              IconButton(
 -                icon: Icon(
 -                  Icons.info_outline_rounded,
 -                  color: infoOpen ? AppColors.accent : Colors.white,
-+                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-+                onPressed: locked ? null : onBack,
-+              ),
-+              Expanded(
-+                child: IgnorePointer(
-+                  child: Column(
-+                    crossAxisAlignment: CrossAxisAlignment.start,
-+                    mainAxisSize: MainAxisSize.min,
-+                    children: [
-+                      Text(
-+                        title,
-+                        maxLines: 1,
-+                        overflow: TextOverflow.ellipsis,
-+                        style: const TextStyle(
-+                          fontSize: 16,
-+                          fontWeight: FontWeight.w700,
-+                          color: Colors.white,
-+                        ),
-+                      ),
-+                      if (secondaryText != null && secondaryText!.isNotEmpty)
-+                        Text(
-+                          secondaryText!,
-+                          maxLines: 1,
-+                          overflow: TextOverflow.ellipsis,
-+                          style: const TextStyle(
-+                              fontSize: 12, color: Colors.white70),
-+                        ),
-+                    ],
-+                  ),
-                 ),
+-                ),
 -                tooltip: context.l10n.playbackStats,
 -                onPressed: onInfo,
-               ),
+-              ),
 -            );
 -          }
 -        default:
 -          final spec = _specFor(context, id);
 -          if (spec != null) {
 -            out.add(
-               IconButton(
+-              IconButton(
 -                icon: Icon(spec.$1, color: Colors.white),
 -                tooltip: spec.$2,
 -                onPressed: spec.$3,
 -              ),
 -            );
 -          }
--      }
--    }
--    return out;
--  }
--
--  /// Icon, tooltip and action for the controls that render the same wherever
--  /// they're placed. Returns null when the control isn't available right now
--  /// (no second quality to pick, a single-episode item, no PiP support).
--  (IconData, String, VoidCallback)? _specFor(BuildContext context, String id) {
++      // ZMIX-EDIT: upstream's special-cased 'cast'/'info' rows target
++      // features ZMIX does not have; every id resolves through _specFor.
++      final spec = _specFor(context, id);
++      if (spec != null) {
++        out.add(
++          IconButton(
++            icon: Icon(spec.$1, color: Colors.white),
++            tooltip: spec.$2,
++            onPressed: spec.$3,
++          ),
++        );
+       }
+     }
+     return out;
+@@ -389,60 +264,35 @@
+   /// they're placed. Returns null when the control isn't available right now
+   /// (no second quality to pick, a single-episode item, no PiP support).
+   (IconData, String, VoidCallback)? _specFor(BuildContext context, String id) {
 -    final c = controller;
--    switch (id) {
--      case 'speed':
++    // ZMIX-EDIT: only the controls ZMIX's YouTube player can act on resolve.
++    // Unsupported ids (tracks/sources/episodes/decoder/enhance/colour/
++    // snapshot/sleep/pip/...) fall through to null - upstream's own
++    // mechanism for "not available right now", so a saved layout naming
++    // them simply skips them. Labels are inline Arabic (was l10n).
+     switch (id) {
+       case 'speed':
 -        return (Icons.speed_rounded, 'Playback speed', onSpeed);
 -      case 'tracks':
 -        return (Icons.subtitles_rounded, 'Audio & subtitles', onAudioSubs);
--      case 'quality':
--        // Nothing to switch inside the stream that's playing -> no button,
--        // rather than a menu of other servers pretending to be qualities.
++        if (onSpeed == null) return null;
++        return (Icons.speed_rounded, 'سرعة التشغيل', onSpeed!);
+       case 'quality':
+         // Nothing to switch inside the stream that's playing -> no button,
+         // rather than a menu of other servers pretending to be qualities.
 -        if (state.qualities.isEmpty && c.mediaVideoTracks.length <= 1) {
 -          return null;
 -        }
 -        return (Icons.high_quality_rounded, 'Quality', onQuality);
 -      case 'sources':
 -        return (Icons.layers_rounded, 'Sources', onSources);
--      case 'more':
++        if (!hasQualityChoices || onQuality == null) return null;
++        return (Icons.high_quality_rounded, 'الجودة', onQuality!);
+       case 'more':
 -        return (Icons.more_vert_rounded, 'More', () => _showMore(context));
 -      case 'episodes':
 -        if (onEpisodes == null) return null;
 -        return (Icons.video_library_outlined, 'Episodes', onEpisodes!);
--      case 'fit':
++        // ZMIX-EDIT: the More panel has no rows yet (every upstream row
++        // targets a feature ZMIX does not have), so the button that would
++        // open an empty panel drops out instead. Restore this spec the day
++        // a real row lands in _showMore.
++        return null;
+       case 'fit':
 -        return (_fitIcon(zoomLabel), 'Aspect ratio · $zoomLabel', onZoom);
--      case 'rotate':
--        return (
--          Icons.screen_rotation_rounded,
++        if (onZoom == null) return null;
++        return (_fitIcon(zoomLabel), 'نسبة العرض · $zoomLabel', onZoom!);
+       case 'rotate':
++        if (onRotate == null) return null;
+         return (
+           Icons.screen_rotation_rounded,
 -          portraitMode ? 'Landscape' : 'Portrait',
 -          onRotate,
 -        );
@@ -607,63 +586,47 @@
 -          Icons.picture_in_picture_alt_rounded,
 -          'Picture-in-picture',
 -          onPip!,
--        );
--    }
--    return null; // unknown id — a layout from a newer build
--  }
--
--  /// Turns saved control ids into real buttons.
--  ///
--  /// The availability rules that were baked into the old fixed row still
--  /// apply on top of the user's arrangement — Quality with nothing to pick
--  /// between, Episodes on a single-episode item and PiP where the device
--  /// doesn't support it drop out even if they've been placed on the bar.
--  /// Anything unrecognised is skipped rather than crashing, which is what
--  /// makes a layout saved by a newer build safe to load.
--  List<Widget> _barButtons(BuildContext context, List<String> ids) {
--    return [
--      for (final id in ids)
--        if (_specFor(context, id) case (final icon, final tip, final tap))
--          _BarButton(icon: icon, tooltip: tip, onTap: tap),
--    ];
--  }
--
--  @override
--  Widget build(BuildContext context) {
++          portraitMode ? 'أفقي' : 'رأسي',
++          onRotate!,
+         );
+     }
+     return null; // unknown id — a layout from a newer build
+@@ -466,12 +316,11 @@
+ 
+   @override
+   Widget build(BuildContext context) {
 -    final c = controller;
 -    final ep = c.currentEpisode;
 -    final epNum = ep.number?.toInt() ?? state.currentIndex + 1;
--    // The episode's own name, but only when it's more than a generic
--    // "Episode N" / bare number (many sources just echo the number there).
++    // ZMIX-EDIT: episode facts arrive as plain fields (no PlayerCubit).
++    final epNum = episodeNumber;
+     // The episode's own name, but only when it's more than a generic
+     // "Episode N" / bare number (many sources just echo the number there).
 -    final epName = ep.title.trim();
--    final hasEpName =
--        epName.isNotEmpty &&
--        epName.toLowerCase() != 'episode $epNum' &&
--        epName != '$epNum';
--    // Line 1 = show name (falls back to "Episode N" when no show title).
--    final primaryTitle = showTitle ?? 'Episode $epNum';
--    // Line 2 = "E5 · Episode Name" — only when there's a show name above it to
--    // pair with (otherwise line 1 already carries the episode number).
--    final secondaryTitle = showTitle == null
--        ? null
--        : 'E$epNum${hasEpName ? ' · $epName' : ''}';
--    // Quality appended to the E-line when enabled — prefers
--    // the source's quality label, else the live video height (e.g. "1080p").
--    String? qualityLabel;
--    if (showQuality) {
++    final epName = episodeTitle.trim();
+     final hasEpName =
+         epName.isNotEmpty &&
+         epName.toLowerCase() != 'episode $epNum' &&
+@@ -487,11 +336,13 @@
+     // the source's quality label, else the live video height (e.g. "1080p").
+     String? qualityLabel;
+     if (showQuality) {
 -      final q = state.active?.quality?.trim();
--      if (q != null && q.isNotEmpty && q.toLowerCase() != 'auto') {
--        qualityLabel = q;
--      } else {
++      // ZMIX-EDIT: the resolved label arrives as a field; the live-height
++      // fallback still reads media_kit's player state directly.
++      final q = activeQualityLabel?.trim();
+       if (q != null && q.isNotEmpty && q.toLowerCase() != 'auto') {
+         qualityLabel = q;
+       } else {
 -        final h = c.player.state.height ?? 0;
--        if (h > 0) qualityLabel = '${h}p';
--      }
--    }
--    final secondaryLine = qualityLabel == null
--        ? secondaryTitle
--        : (secondaryTitle == null
--              ? qualityLabel
--              : '$secondaryTitle · $qualityLabel');
++        final h = player.state.height ?? 0;
+         if (h > 0) qualityLabel = '${h}p';
+       }
+     }
+@@ -500,13 +351,9 @@
+         : (secondaryTitle == null
+               ? qualityLabel
+               : '$secondaryTitle · $qualityLabel');
 -    // Not just "is there another entry" — an episode nothing has yet is not a
 -    // next episode. Shared with the outro pill, the Up-next card and autoplay
 -    // so every Next affordance agrees.
@@ -671,180 +634,34 @@
 -    // Movies and one-off items have nowhere to step, so they get a lone play
 -    // button rather than two arrows that can never do anything.
 -    final multiEpisode = c.episodes.length > 1;
--
--    return Stack(
--      fit: StackFit.expand,
--      children: [
--        // Top scrim.
--        const Positioned(
--          top: 0,
--          left: 0,
--          right: 0,
--          height: 110,
--          child: IgnorePointer(
--            child: DecoratedBox(
--              decoration: BoxDecoration(
--                gradient: LinearGradient(
--                  begin: Alignment.topCenter,
--                  end: Alignment.bottomCenter,
--                  colors: [Color(0x59000000), Color(0x00000000)],
-+                icon: Icon(
-+                  locked ? Icons.lock_rounded : Icons.lock_open_rounded,
-+                  color: locked ? accent : Colors.white,
-                 ),
-+                onPressed: onToggleLock,
-               ),
--            ),
-+            ],
-           ),
-         ),
--        // Bottom scrim. There were two of these stacked at each end — 0xCC over
--        // 0x99 up top, 0xE6 over 0xB3 down here — which is why showing the
--        // controls dropped a heavy curtain over the video. One gentle pass each
--        // way is plenty to keep white text legible on a bright frame.
--        const Positioned(
--          bottom: 0,
--          left: 0,
--          right: 0,
--          height: 170,
--          child: IgnorePointer(
--            child: DecoratedBox(
--              decoration: BoxDecoration(
--                gradient: LinearGradient(
--                  begin: Alignment.bottomCenter,
--                  end: Alignment.topCenter,
--                  colors: [Color(0x8C000000), Color(0x00000000)],
-+      ),
-+    );
-+  }
-+
-+  Widget _centerTransport() {
-+    return Center(
-+      child: Row(
-+        mainAxisSize: MainAxisSize.min,
-+        children: [
-+          if (hasPrev) ...[
-+            _TransportButton(
-+                icon: Icons.skip_previous_rounded, onTap: onPrev),
-+            const SizedBox(width: 24),
-+          ],
-+          if (buffering)
-+            const SizedBox(
-+              width: 58,
-+              height: 58,
-+              child: Center(
-+                child: SizedBox(
-+                  width: 32,
-+                  height: 32,
-+                  child: CircularProgressIndicator(
-+                      color: Colors.white, strokeWidth: 3),
-                 ),
-               ),
--            ),
--          ),
--        ),
-+            )
-+          else
-+            _PlayPauseDisc(playing: playing, onTap: onPlayPause),
-+          if (hasNext) ...[
-+            const SizedBox(width: 24),
-+            _TransportButton(icon: Icons.skip_next_rounded, onTap: onNext),
-+          ],
-+        ],
-+      ),
-+    );
-+  }
++    // ZMIX-EDIT: hasNext / multiEpisode arrive as fields. Upstream's note
++    // stands: an episode nothing has yet is not a next episode, and one-off
++    // items get a lone play button rather than two dead arrows.
  
--        // Top bar.
--        Positioned(
--          top: 0,
--          left: 0,
--          right: 0,
--          child: SafeArea(
--            bottom: false,
--            // Vertical insets only. Now that the window draws into the display
--            // cutout, the horizontal safe inset is the camera's — and it exists
--            // on one edge only, so honouring it shunts the whole bar sideways
--            // and the margins stop matching. The cutout sits mid-edge; this bar
--            // is pinned to the top, so they never meet.
--            left: false,
--            right: false,
--            child: Padding(
--              // 32, not the bottom block's 44, and the difference is on
--              // purpose: these are IconButtons, which reserve 12px around the
--              // glyph before it draws (8 default padding, plus 4 stretching the
--              // 40px button out to the 48px minimum touch target). 32 + 12 puts
--              // the back arrow on 44 — the exact line the bottom capsules start
--              // at. Writing 44 here would land it at 56 and overshoot inward.
--              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 4),
--              child: Row(
-+  Widget _bottomBlock(BuildContext context) {
-+    return Align(
-+      alignment: Alignment.bottomCenter,
-+      child: SafeArea(
-+        top: false,
-+        left: false,
-+        right: false,
-+        child: Padding(
-+          // One shared margin so every edge lines up (Zangetsu uses 44/14).
-+          padding: const EdgeInsets.fromLTRB(44, 0, 44, 14),
-+          child: Column(
-+            mainAxisSize: MainAxisSize.min,
-+            children: [
-+              _SeekRow(
-+                position: position,
-+                duration: duration,
-+                onChanged: onScrubChanged,
-+                onChangeEnd: onScrubEnd,
-+              ),
-+              const SizedBox(height: 2),
-+              Row(
-                 children: [
--                  IconButton(
--                    icon: const Icon(
--                      Icons.arrow_back_rounded,
--                      color: Colors.white,
-+                  _BarGroup(children: [
-+                    _BarButton(
-+                      onTap: onCycleSpeed,
-+                      child: Text(
-+                        '${rate}x',
-+                        style: const TextStyle(
-+                            fontWeight: FontWeight.w700,
-+                            fontSize: 14,
-+                            color: Colors.white),
-+                      ),
+     return Stack(
+       fit: StackFit.expand,
+@@ -580,7 +427,7 @@
+                       Icons.arrow_back_rounded,
+                       color: Colors.white,
                      ),
 -                    tooltip: context.l10n.back,
--                    onPressed: onBack,
--                  ),
--                  // Text hit-tests as opaque (RenderParagraph.hitTestSelf is
--                  // true), so the title used to eat taps aimed at the video —
--                  // a wide dead strip across the top where tapping did nothing.
--                  // Nothing here is interactive, so let taps fall through to the
--                  // zones below and toggle the controls like anywhere else.
--                  Expanded(
--                    child: IgnorePointer(
--                      child: _ShowAfterFirstFrame(
--                        // Show / episode names stay hidden behind the startup
--                        // loader, then fade in.
++                    tooltip: 'رجوع', // ZMIX-EDIT (was context.l10n.back)
+                     onPressed: onBack,
+                   ),
+                   // Text hit-tests as opaque (RenderParagraph.hitTestSelf is
+@@ -593,7 +440,7 @@
+                       child: _ShowAfterFirstFrame(
+                         // Show / episode names stay hidden behind the startup
+                         // loader, then fade in.
 -                        controller: c,
--                        child: Column(
--                          crossAxisAlignment: CrossAxisAlignment.start,
--                          mainAxisSize: MainAxisSize.min,
--                          children: [
--                            Row(
--                              children: [
--                                Flexible(
--                                  child: Text(
--                                    primaryTitle,
--                                    style: AppText.headline.copyWith(
--                                      color: Colors.white,
--                                    ),
--                                    maxLines: 1,
--                                    overflow: TextOverflow.ellipsis,
--                                  ),
--                                ),
++                        player: player, // ZMIX-EDIT
+                         child: Column(
+                           crossAxisAlignment: CrossAxisAlignment.start,
+                           mainAxisSize: MainAxisSize.min,
+@@ -610,25 +457,9 @@
+                                     overflow: TextOverflow.ellipsis,
+                                   ),
+                                 ),
 -                                // Filler comes from the Jikan lookup, not the
 -                                // source — Episode.filler is always false here.
 -                                // Listened to because that lookup lands long
@@ -864,51 +681,16 @@
 -                                        )
 -                                      : const SizedBox.shrink(),
 -                                ),
--                              ],
-+                    _BarButton(
-+                      onTap: onQuality,
-+                      child: const Icon(Icons.hd_rounded,
-+                          color: Colors.white, size: 22),
-+                    ),
-+                  ]),
-+                  const Spacer(),
-+                  _BarGroup(children: [
-+                    _BarButton(
-+                      onTap: onCycleFit,
-+                      child: Row(
-+                        mainAxisSize: MainAxisSize.min,
-+                        children: [
-+                          const Icon(Icons.aspect_ratio_rounded,
-+                              color: Colors.white, size: 20),
-+                          if (fitLabel.isNotEmpty) ...[
-+                            const SizedBox(width: 6),
-+                            Text(
-+                              fitLabel,
-+                              style: const TextStyle(
-+                                  fontSize: 12.5, color: Colors.white),
++                                // ZMIX-EDIT: the Jikan filler badge is
++                                // omitted - YouTube videos carry no filler
++                                // lookup.
+                               ],
                              ),
--                            if (secondaryLine != null)
--                              Padding(
--                                padding: const EdgeInsets.only(top: 1),
--                                child: Text(
--                                  secondaryLine,
--                                  style: AppText.caption.copyWith(
--                                    color: Colors.white70,
--                                  ),
--                                  maxLines: 1,
--                                  overflow: TextOverflow.ellipsis,
--                                ),
--                              ),
-                           ],
--                        ),
-+                        ],
-                       ),
-                     ),
--                  ),
--                  // Whatever the user put up here, in their order. Cast and
--                  // the ⓘ stats toggle live here by default; anything else in
--                  // the registry can be moved up in Settings.
--                  ..._topButtons(context, barConfig.top),
+                             if (secondaryLine != null)
+@@ -652,19 +483,9 @@
+                   // the ⓘ stats toggle live here by default; anything else in
+                   // the registry can be moved up in Settings.
+                   ..._topButtons(context, barConfig.top),
 -                  // Sleep timer armed — a visible accent moon; tap to adjust or
 -                  // cancel. Only shown while a timer / end-of-episode is set,
 -                  // and only when Sleep isn't already placed somewhere, or an
@@ -922,18 +704,20 @@
 -                      tooltip: context.l10n.sleepTimerOn,
 -                      onPressed: onSleep,
 -                    ),
--                  // Episodes and ⋮ More live in the bottom bar now — a second
--                  // copy up here just split the same action across two places.
--                  // Lock stays: it's the one control you want reachable without
--                  // looking down at the bar you're about to hide.
--                  IconButton(
--                    icon: const Icon(
--                      Icons.lock_open_rounded,
--                      color: Colors.white,
--                    ),
++                  // ZMIX-EDIT: the armed-sleep moon, the Settings shortcut
++                  // and the room-chat button are omitted - none of those
++                  // features exist in ZMIX.
+                   // Episodes and ⋮ More live in the bottom bar now — a second
+                   // copy up here just split the same action across two places.
+                   // Lock stays: it's the one control you want reachable without
+@@ -674,26 +495,9 @@
+                       Icons.lock_open_rounded,
+                       color: Colors.white,
+                     ),
 -                    tooltip: context.l10n.lockControls,
--                    onPressed: onLock,
--                  ),
++                    tooltip: 'قفل', // ZMIX-EDIT (was context.l10n.lockControls)
+                     onPressed: onLock,
+                   ),
 -                  IconButton(
 -                    icon: const Icon(
 -                      Icons.settings_rounded,
@@ -951,165 +735,92 @@
 -                      tooltip: context.l10n.chat,
 -                      onPressed: onChat,
 -                    ),
-+                  ]),
                  ],
                ),
--            ),
-+            ],
-           ),
-         ),
-+      ),
-+    );
-+  }
- 
--        // Centre transport — episode step either side of play/pause. The ±10s
--        // buttons used to live here, but they jumped a hardcoded 10s while
--        // double-tap honoured the user's Double-tap skip setting, so the two
--        // disagreed; seeking is covered by double-tap, drag-to-seek and the
--        // MegaSkip pill, all of which read the same preference.
--        Center(
--          child: Row(
--            mainAxisSize: MainAxisSize.min,
--            children: [
--              if (multiEpisode) ...[
--                _TransportButton(
--                  icon: Icons.skip_previous_rounded,
+             ),
+@@ -705,6 +509,7 @@
+         // double-tap honoured the user's Double-tap skip setting, so the two
+         // disagreed; seeking is covered by double-tap, drag-to-seek and the
+         // MegaSkip pill, all of which read the same preference.
++        if (!transportHidden) // ZMIX-EDIT
+         Center(
+           child: Row(
+             mainAxisSize: MainAxisSize.min,
+@@ -712,19 +517,19 @@
+               if (multiEpisode) ...[
+                 _TransportButton(
+                   icon: Icons.skip_previous_rounded,
 -                  label: context.l10n.previousEpisode,
--                  onTap: onPrev,
--                ),
--                const SizedBox(width: 24),
--              ],
--              StreamBuilder<int?>(
++                  label: 'السابق', // ZMIX-EDIT (was context.l10n.previousEpisode)
+                   onTap: onPrev,
+                 ),
+                 const SizedBox(width: 24),
+               ],
+               StreamBuilder<int?>(
 -                stream: c.player.stream.width,
 -                initialData: c.player.state.width,
--                builder: (context, frame) {
--                  return StreamBuilder<bool>(
++                stream: player.widthStream, // ZMIX-EDIT
++                initialData: player.state.width,
+                 builder: (context, frame) {
+                   return StreamBuilder<bool>(
 -                    stream: c.player.stream.buffering,
--                    builder: (context, bSnap) {
++                    stream: player.bufferingStream,
+                     builder: (context, bSnap) {
 -                      final buffering = bSnap.data ?? c.player.state.buffering;
--                      // While buffering, show the spinner IN PLACE OF the play/pause
--                      // button — no more spinner-over-button overlap. 58px matches
--                      // _AnimatedPlayPause's disc exactly, so the episode arrows
--                      // don't twitch every time playback stalls.
--                      if (buffering) {
--                        if ((frame.data ?? 0) <= 0) {
--                          return const SizedBox(width: 58, height: 58);
--                        }
--                        return const SizedBox(
--                          width: 58,
--                          height: 58,
--                          child: Center(
--                            child: SizedBox(
--                              width: 32,
--                              height: 32,
--                              child: CircularProgressIndicator(
--                                color: Colors.white,
--                                strokeWidth: 3,
--                              ),
--                            ),
--                          ),
--                        );
--                      }
--                      return StreamBuilder<bool>(
++                      final buffering = bSnap.data ?? player.state.buffering;
+                       // While buffering, show the spinner IN PLACE OF the play/pause
+                       // button — no more spinner-over-button overlap. 58px matches
+                       // _AnimatedPlayPause's disc exactly, so the episode arrows
+@@ -749,13 +554,13 @@
+                         );
+                       }
+                       return StreamBuilder<bool>(
 -                        stream: c.player.stream.playing,
--                        builder: (context, snap) {
++                        stream: player.playingStream,
+                         builder: (context, snap) {
 -                          final playing = snap.data ?? c.player.state.playing;
--                          return _AnimatedPlayPause(
--                            playing: playing,
--                            onTap: () {
++                          final playing = snap.data ?? player.state.playing;
+                           return _AnimatedPlayPause(
+                             playing: playing,
+                             onTap: () {
 -                              c.togglePlay();
--                              onInteract();
--                            },
--                          );
--                        },
--                      );
--                    },
--                  );
--                },
--              ),
--              if (multiEpisode) ...[
--                const SizedBox(width: 24),
--                _TransportButton(
--                  icon: Icons.skip_next_rounded,
++                              onTogglePlay(); // ZMIX-EDIT
+                               onInteract();
+                             },
+                           );
+@@ -769,10 +574,10 @@
+                 const SizedBox(width: 24),
+                 _TransportButton(
+                   icon: Icons.skip_next_rounded,
 -                  label: context.l10n.nextEpisode2,
 -                  onTap: hasNext
--                      ? () {
++                  label: 'التالي', // ZMIX-EDIT (was context.l10n.nextEpisode2)
++                  onTap: hasNext && onNext != null
+                       ? () {
 -                          c.playNext();
--                          onInteract();
--                        }
--                      : null,
--                ),
--              ],
--            ],
--          ),
-+  Widget _seekIndicator() {
-+    return Center(
-+      child: Container(
-+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-+        decoration: BoxDecoration(
-+          color: Colors.black.withValues(alpha: 0.65),
-+          borderRadius: BorderRadius.circular(30),
-         ),
-+        child: Row(
-+          mainAxisSize: MainAxisSize.min,
-+          children: [
-+            Icon(
-+              seekForward
-+                  ? Icons.fast_forward_rounded
-+                  : Icons.fast_rewind_rounded,
-+              color: Colors.white,
-+            ),
-+            const SizedBox(width: 6),
-+            Text(
-+              '${seekDelta.abs()} ث',
-+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-+            ),
-+          ],
-+        ),
-+      ),
-+    );
-+  }
- 
--        // Bottom: seek row + buttons. Rises into place as it fades in — the
--        // motion reads as instant even when the tap resolves a beat later.
--        Positioned(
--          bottom: 0,
--          left: 0,
--          right: 0,
--          child: AnimatedSlide(
--            offset: visible ? Offset.zero : const Offset(0, 0.14),
--            duration: const Duration(milliseconds: 240),
--            curve: Curves.easeOutCubic,
--            child: SafeArea(
--              top: false,
--              // Vertical inset only — the bottom one keeps the bar clear of the
--              // gesture nav. See the top bar for why the horizontal cutout inset
--              // is skipped: it lands on one edge only and pushed this whole block
--              // sideways, leaving a fat gap on the camera side and a thin one
--              // opposite. The camera sits mid-edge, well clear of this bar.
--              left: false,
--              right: false,
--              child: Padding(
--                // One margin for the whole block — timestamp, progress bar and
--                // both button groups share it, so every edge lines up. Kept wide
--                // so the controls sit clear of the screen edges.
--                padding: const EdgeInsets.fromLTRB(44, 0, 44, 14),
--                child: Column(
--                  mainAxisSize: MainAxisSize.min,
--                  children: [
--                    // Duration tracker (off-screen listener via StreamBuilder).
--                    StreamBuilder<Duration>(
++                          onNext!(); // ZMIX-EDIT
+                           onInteract();
+                         }
+                       : null,
+@@ -811,25 +616,21 @@
+                   children: [
+                     // Duration tracker (off-screen listener via StreamBuilder).
+                     StreamBuilder<Duration>(
 -                      stream: c.player.stream.duration,
 -                      initialData: c.player.state.duration,
--                      builder: (context, snap) {
--                        final d = snap.data ?? duration;
--                        WidgetsBinding.instance.addPostFrameCallback((_) {
--                          if (d > Duration.zero) onDurationChanged(d);
--                        });
--                        return PlayerSeekBar(
++                      stream: player.durationStream, // ZMIX-EDIT
++                      initialData: player.state.duration,
+                       builder: (context, snap) {
+                         final d = snap.data ?? duration;
+                         WidgetsBinding.instance.addPostFrameCallback((_) {
+                           if (d > Duration.zero) onDurationChanged(d);
+                         });
+                         return PlayerSeekBar(
 -                          controller: c,
--                          duration: d > Duration.zero ? d : duration,
--                          onInteract: onInteract,
++                          player: player, // ZMIX-EDIT
++                          onSeek: onSeek, // ZMIX-EDIT
+                           duration: d > Duration.zero ? d : duration,
+                           onInteract: onInteract,
 -                          // MegaSkip — manual jump-forward, riding the timestamp's
 -                          // line rather than a row of its own above it.
 -                          trailing: megaSkipEnabled
@@ -1118,381 +829,44 @@
 -                                  onTap: onMegaSkip,
 -                                )
 -                              : null,
--                        );
--                      },
--                    ),
--                    const SizedBox(height: 2),
--                    // Control bar under the progress bar: the pickers ride in one
--                    // translucent group on the left, episode list + fit mode in
--                    // another on the right. Two groups rather than seven floating
--                    // chips — the split reads at a glance, and every button is the
--                    // same width so nothing shifts as the video changes.
--                    LayoutBuilder(
--                      builder: (context, constraints) {
--                        // Rendered from the user's saved arrangement rather than
--                        // a fixed row. Untouched prefs give the defaults, which
--                        // are the exact layout that shipped before the Settings
--                        // screen existed — so nobody's bar moves unless they
--                        // move it.
--                        final left = _barButtons(context, barConfig.left);
--                        final right = _barButtons(context, barConfig.right);
--                        // Buttons are a uniform 48 (12 padding + 24 icon + 12)
--                        // and each group adds 8 of its own, so the width the bar
--                        // wants is arithmetic rather than something to measure.
--                        const buttonWidth = 48.0;
--                        const groupPadding = 8.0;
--                        double groupWidth(int n) =>
--                            n == 0 ? 0 : n * buttonWidth + groupPadding;
--                        final wanted =
--                            groupWidth(left.length) + groupWidth(right.length);
--
--                        if (wanted <= constraints.maxWidth) {
--                          return Row(
--                            children: [
--                              if (left.isNotEmpty) _BarGroup(children: left),
--                              const Spacer(),
--                              if (right.isNotEmpty) _BarGroup(children: right),
--                            ],
--                          );
--                        }
--                        // Narrower than the bar wants — portrait, or a bar the
--                        // user has loaded up in Settings. The Spacer pins the
--                        // groups to opposite edges and can't give any width back,
--                        // so the right-hand group would run off-screen and take
--                        // its buttons out of reach. Scroll the pair instead:
--                        // everything stays tappable, and nothing about the
--                        // landscape layout above changes.
--                        return SingleChildScrollView(
--                          scrollDirection: Axis.horizontal,
--                          child: Row(
--                            children: [
--                              if (left.isNotEmpty) _BarGroup(children: left),
--                              if (left.isNotEmpty && right.isNotEmpty)
--                                const SizedBox(width: 8),
--                              if (right.isNotEmpty) _BarGroup(children: right),
--                            ],
--                          ),
--                        );
--                      },
--                    ),
--                  ],
--                ),
-+  Widget _hud() {
-+    return Align(
-+      alignment: const Alignment(0, -0.35),
-+      child: Container(
-+        width: 150,
-+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-+        decoration: BoxDecoration(
-+          color: Colors.black.withValues(alpha: 0.7),
-+          borderRadius: BorderRadius.circular(14),
-+        ),
-+        child: Column(
-+          mainAxisSize: MainAxisSize.min,
-+          children: [
-+            Icon(
-+              hudIsBrightness
-+                  ? Icons.wb_sunny_outlined
-+                  : Icons.volume_up_rounded,
-+              size: 22,
-+              color: Colors.white,
-+            ),
-+            const SizedBox(height: 8),
-+            ClipRRect(
-+              borderRadius: BorderRadius.circular(4),
-+              child: LinearProgressIndicator(
-+                value: hudValue,
-+                minHeight: 5,
-+                backgroundColor: Colors.white24,
-+                valueColor: const AlwaysStoppedAnimation(accent),
-               ),
-             ),
-+          ],
-+        ),
-+      ),
-+    );
-+  }
-+
-+  Widget _boostBadge() {
-+    return Align(
-+      alignment: Alignment.topCenter,
-+      child: Container(
-+        margin: const EdgeInsets.only(top: 52),
-+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-+        decoration: BoxDecoration(
-+          color: accent.withValues(alpha: 0.9),
-+          borderRadius: BorderRadius.circular(20),
-+        ),
-+        child: const Text('2×',
-+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-+      ),
-+    );
-+  }
-+
-+  Widget _errorBanner() {
-+    return Align(
-+      alignment: Alignment.bottomCenter,
-+      child: Container(
-+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 150),
-+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-+        decoration: BoxDecoration(
-+          color: Colors.red.shade900.withValues(alpha: 0.9),
-+          borderRadius: BorderRadius.circular(12),
-+        ),
-+        child: Text(
-+          'حصل خطأ في التشغيل: $errorText',
-+          textAlign: TextAlign.center,
-+          style: const TextStyle(fontSize: 13, color: Colors.white),
-+        ),
-+      ),
-+    );
-+  }
-+}
-+
-+/// Seek row: position · slider · total/remaining (tap the trailing time to
-+/// flip between the two, CloudStream-style, as Zangetsu's PlayerSeekBar does).
-+class _SeekRow extends StatefulWidget {
-+  const _SeekRow({
-+    required this.position,
-+    required this.duration,
-+    this.onChanged,
-+    this.onChangeEnd,
-+  });
-+
-+  final Duration position;
-+  final Duration duration;
-+  final ValueChanged<double>? onChanged;
-+  final ValueChanged<double>? onChangeEnd;
-+
-+  @override
-+  State<_SeekRow> createState() => _SeekRowState();
-+}
-+
-+class _SeekRowState extends State<_SeekRow> {
-+  bool _showRemaining = false;
-+
-+  @override
-+  Widget build(BuildContext context) {
-+    final fraction = widget.duration > Duration.zero
-+        ? (widget.position.inMilliseconds / widget.duration.inMilliseconds)
-+            .clamp(0.0, 1.0)
-+        : 0.0;
-+    final trailing = _showRemaining
-+        ? '-${PlayerChrome.fmt(widget.duration - widget.position)}'
-+        : PlayerChrome.fmt(widget.duration);
-+    return Row(
-+      children: [
-+        Text(
-+          PlayerChrome.fmt(widget.position),
-+          style: const TextStyle(fontSize: 12, color: Colors.white),
-+        ),
-+        Expanded(
-+          child: SliderTheme(
-+            data: SliderTheme.of(context).copyWith(
-+              trackHeight: 3,
-+              activeTrackColor: PlayerChrome.accent,
-+              thumbColor: PlayerChrome.accent,
-+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-+            ),
-+            child: Slider(
-+              value: fraction,
-+              onChanged: widget.onChanged,
-+              onChangeEnd: widget.onChangeEnd,
-+            ),
-+          ),
-+        ),
-+        GestureDetector(
-+          onTap: () => setState(() => _showRemaining = !_showRemaining),
-+          child: Text(
-+            trailing,
-+            style: const TextStyle(fontSize: 12, color: Colors.white),
-           ),
-         ),
-       ],
-@@ -898,57 +459,148 @@
-   }
- }
- 
--// ─────────────────────────────────────────────────────────────────────────────
--// Seek row — current time + slider (stream-bound) + total time.
--// ─────────────────────────────────────────────────────────────────────────────
--
--/// Fades its child in once the first video frame is up — or playback has
--/// started, so audio-only media (no frame, ever) isn't left without a title.
--/// Latches: a later source switch resetting the width doesn't hide it again.
--class _ShowAfterFirstFrame extends StatefulWidget {
++                          // ZMIX-EDIT: MegaSkip (Aniyomi jump-forward pill)
++                          // omitted - ZMIX has no skip preference to honour.
++                          trailing: null,
+                         );
+                       },
+                     ),
+@@ -906,9 +707,9 @@
+ /// started, so audio-only media (no frame, ever) isn't left without a title.
+ /// Latches: a later source switch resetting the width doesn't hide it again.
+ class _ShowAfterFirstFrame extends StatefulWidget {
 -  const _ShowAfterFirstFrame({required this.controller, required this.child});
-+/// 58px centre play/pause disc (Zangetsu's _AnimatedPlayPause footprint).
-+class _PlayPauseDisc extends StatelessWidget {
-+  const _PlayPauseDisc({required this.playing, this.onTap});
++  const _ShowAfterFirstFrame({required this.player, required this.child});
  
 -  final PlayerCubit controller;
--  final Widget child;
-+  final bool playing;
-+  final VoidCallback? onTap;
++  final ZmixPlayerSurface player; // ZMIX-EDIT
+   final Widget child;
  
    @override
--  State<_ShowAfterFirstFrame> createState() => _ShowAfterFirstFrameState();
-+  Widget build(BuildContext context) {
-+    return Material(
-+      color: Colors.black.withValues(alpha: 0.55),
-+      shape: const CircleBorder(),
-+      clipBehavior: Clip.antiAlias,
-+      child: InkWell(
-+        onTap: onTap,
-+        child: SizedBox(
-+          width: 58,
-+          height: 58,
-+          child: Icon(
-+            playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-+            color: Colors.white,
-+            size: 34,
-+          ),
-+        ),
-+      ),
-+    );
-+  }
- }
+@@ -920,7 +721,7 @@
+   final _subs = <StreamSubscription<Object?>>[];
  
--class _ShowAfterFirstFrameState extends State<_ShowAfterFirstFrame> {
--  late bool _shown = _ready();
--  final _subs = <StreamSubscription<Object?>>[];
-+class _TransportButton extends StatelessWidget {
-+  const _TransportButton({required this.icon, this.onTap});
- 
--  bool _ready() {
+   bool _ready() {
 -    final p = widget.controller.player.state;
--    return (p.width ?? 0) > 0 || p.playing;
--  }
-+  final IconData icon;
-+  final VoidCallback? onTap;
- 
--  void _check() {
--    if (!_shown && mounted && _ready()) setState(() => _shown = true);
-+  @override
-+  Widget build(BuildContext context) {
-+    return Material(
-+      color: Colors.black.withValues(alpha: 0.55),
-+      shape: const CircleBorder(),
-+      clipBehavior: Clip.antiAlias,
-+      child: InkWell(
-+        onTap: onTap,
-+        child: SizedBox(
-+          width: 46,
-+          height: 46,
-+          child: Icon(icon,
-+              color: onTap == null ? Colors.white38 : Colors.white, size: 26),
-+        ),
-+      ),
-+    );
++    final p = widget.player.state;
+     return (p.width ?? 0) > 0 || p.playing;
    }
-+}
-+
-+/// Translucent capsule grouping bar buttons (Zangetsu's _BarGroup).
-+class _BarGroup extends StatelessWidget {
-+  const _BarGroup({required this.children});
-+
-+  final List<Widget> children;
  
+@@ -931,10 +732,10 @@
    @override
--  void initState() {
--    super.initState();
+   void initState() {
+     super.initState();
 -    final s = widget.controller.player.stream;
--    _subs
+     _subs
 -      ..add(s.width.listen((_) => _check()))
 -      ..add(s.playing.listen((_) => _check()));
-+  Widget build(BuildContext context) {
-+    return Container(
-+      decoration: BoxDecoration(
-+        color: Colors.black.withValues(alpha: 0.45),
-+        borderRadius: BorderRadius.circular(24),
-+      ),
-+      padding: const EdgeInsets.symmetric(horizontal: 4),
-+      child: Row(mainAxisSize: MainAxisSize.min, children: children),
-+    );
++      // ZMIX-EDIT: surface getters (was media_kit's player.stream).
++      ..add(widget.player.widthStream.listen((_) => _check()))
++      ..add(widget.player.playingStream.listen((_) => _check()));
    }
-+}
-+
-+class _BarButton extends StatelessWidget {
-+  const _BarButton({required this.child, this.onTap});
-+
-+  final Widget child;
-+  final VoidCallback? onTap;
  
    @override
--  void dispose() {
--    for (final sub in _subs) {
--      sub.cancel();
--    }
--    super.dispose();
-+  Widget build(BuildContext context) {
-+    return InkWell(
-+      borderRadius: BorderRadius.circular(20),
-+      onTap: onTap,
-+      child: Padding(
-+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-+        child: child,
-+      ),
-+    );
-   }
-+}
-+
-+// ── Fit modes and quality picker ─────────────────────────────────────────
-+
-+/// Fit modes, same trio and order as Zangetsu's `_fits` in
-+/// player_screen.dart: contain (fit) / cover (zoom, crop) / fill (stretch).
-+const List<(BoxFit, String)> kPlayerFits = [
-+  (BoxFit.contain, 'ملاءمة'),
-+  (BoxFit.cover, 'توسيع'),
-+  (BoxFit.fill, 'تمديد'),
-+];
-+
-+/// Next fit in Zangetsu's cycle order.
-+int nextFitIndex(int current) => (current + 1) % kPlayerFits.length;
-+
-+/// Quality picker list, adapted from Zangetsu's quality bottom sheet:
-+/// a title, one row per available quality, check mark on the active row.
-+/// Shown by the caller inside a modal bottom sheet.
-+class QualityListSheet extends StatelessWidget {
-+  const QualityListSheet({
-+    super.key,
-+    required this.qualities,
-+    required this.activeQuality,
-+    required this.onPick,
-+  });
-+
-+  final List<String> qualities;
-+  final String activeQuality;
-+  final ValueChanged<String> onPick;
- 
-   @override
--  Widget build(BuildContext context) => AnimatedOpacity(
--    opacity: _shown ? 1 : 0,
--    duration: const Duration(milliseconds: 250),
--    child: widget.child,
--  );
-+  Widget build(BuildContext context) {
-+    return SafeArea(
-+      child: Column(
-+        mainAxisSize: MainAxisSize.min,
-+        children: [
-+          const Padding(
-+            padding: EdgeInsets.all(14),
-+            child: Text('جودة التشغيل',
-+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-+          ),
-+          for (final q in qualities)
-+            ListTile(
-+              title: Text(q),
-+              trailing: q == activeQuality
-+                  ? const Icon(Icons.check_rounded,
-+                      color: PlayerChrome.accent)
-+                  : null,
-+              onTap: () => onPick(q),
-+            ),
-+        ],
-+      ),
-+    );
-+  }
- }

@@ -1,0 +1,11 @@
+--- upstream/core/theme/app_text.dart
++++ zmix/lib/player/app_text.dart
+@@ -1,3 +1,8 @@
++// Ported from Zangetsu (https://github.com/Spyou/Zangetsu), GPL-3.0,
++// core/theme/app_text.dart at upstream commit 772fac56d265b238b90118bd68abe2e7353b1f6e.
++// Literal copy with integration edits only; each edit is marked ZMIX-EDIT.
++// ZMIX remains GPL-3.0.
++
+ import 'package:flutter/material.dart';
+ import 'app_colors.dart';
+ 

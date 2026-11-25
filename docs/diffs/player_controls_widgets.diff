@@ -1,0 +1,28 @@
+--- upstream/features/player/player_controls_widgets.dart
++++ zmix/lib/player/player_controls_widgets.dart
+@@ -1,5 +1,9 @@
+-// Skip pills, round buttons, the bar capsule and the centre transport discs.
+-part of 'player_screen.dart';
++// Ported from Zangetsu (https://github.com/Spyou/Zangetsu), GPL-3.0,
++// features/player/player_controls_widgets.dart at upstream commit 772fac56d265b238b90118bd68abe2e7353b1f6e.
++// Literal copy with integration edits only; each edit is marked ZMIX-EDIT.
++// ZMIX remains GPL-3.0.
++
++part of 'player_controls_overlay.dart';
+ 
+ class PlayerSegmentSkipButton extends StatefulWidget {
+   const PlayerSegmentSkipButton({
+@@ -215,9 +219,11 @@
+ 
+ /// Aspect-mode icon. The fit button dropped its text label to keep every
+ /// button the same width, so the icon has to carry which mode you're on.
++// ZMIX-EDIT: ZMIX's fit labels are Arabic (kPlayerFits in
++// lib/player_chrome.dart): ملاءمة (contain) / توسيع (cover) / تمديد (fill).
+ IconData _fitIcon(String label) => switch (label) {
+-  'Fill' => Icons.crop_free_rounded,
+-  'Stretch' => Icons.open_in_full_rounded,
++  'توسيع' => Icons.crop_free_rounded,
++  'تمديد' => Icons.open_in_full_rounded,
+   _ => Icons.fit_screen_rounded,
+ };
+ 

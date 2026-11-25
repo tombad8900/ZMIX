@@ -9,9 +9,12 @@ license-compatible; upstream copyright applies to the adapted files.
 The user instruction was literal copy/paste of the original source as the
 foundation, with only the edits needed to integrate it into ZMIX. Where a
 verbatim copy was impossible, this document names the dependency that forced
-the edit instead of silently rewriting. Full per-file evidence:
-`docs/diffs/poster_card.diff` and `docs/diffs/player_controls_overlay.diff`
-(unified diffs, upstream file vs ZMIX file).
+the edit instead of silently rewriting. Full per-file evidence: unified
+diffs (upstream file vs ZMIX file) in `docs/diffs/` for every
+upstream-derived file that is WIRED INTO THE APK:
+`poster_card.diff`, `player_controls_overlay.diff`, `player_seek_bar.diff`,
+`player_controls_widgets.diff`, `player_controls_config.diff`,
+`app_text.diff`, `app_colors.diff`, `frosted_surface.diff`.
 
 ## Cards: lib/ui/poster_card.dart <- upstream lib/core/ui/poster_card.dart
 
@@ -43,25 +46,50 @@ Forced edits (dependency does not exist in ZMIX):
 - `_ScoreTag` / `_CountChip` (catalogue score/behind badges): not ported,
   ZMIX has no catalogue metadata; duration label rides the `tags` slot.
 
-## Player: lib/player_chrome.dart <- upstream lib/features/player/player_controls_overlay.dart (+ player_seek_bar.dart, player_screen.dart)
+## Player: lib/player/ — LITERAL port, wired into the APK
 
-Zangetsu's overlay is bound to its PlayerCubit/bloc/get_it/l10n stack, so the
-file cannot be dropped in as-is; the layout, values and behaviors below are
-taken from the upstream source and re-bound to ZMIX's stateless chrome +
-player-page split:
+As of the wiring commit the player controls are a literal copy of upstream's
+player UI files, with integration edits only (each marked `ZMIX-EDIT` in
+place). `lib/player_page.dart` mounts `PlayerControlsOverlay` exactly the
+way upstream's `player_screen.dart` does: only when unlocked, inside the
+production `ControlsGate` (AnimatedOpacity 160ms in / 240ms out +
+IgnorePointer when hidden), with `PlayerControlsConfig.defaults` as the bar
+layout.
 
-| Upstream source | ZMIX | Status |
+| ZMIX file (wired) | Upstream file | Edits |
 |---|---|---|
-| Top scrim gradient (0x59 -> 0, height 110) and bottom scrim (0x8C -> 0, height 170) | player_chrome.dart build | verbatim values |
-| Two-line top bar: primary title + secondary line, back button, lock button | same | adapted binding |
-| Center transport: previous / 58px play-pause disc / next | same | adapted binding |
-| Bottom block: seek row above a row of `_BarGroup` translucent capsules (pickers left, fit right), padding 44/14 | same | adapted binding |
-| player_seek_bar.dart: coral slider, tap total<->remaining time, 250ms position sampling | _SeekRow | adapted binding |
-| player_screen.dart `_fits`: contain / cover / fill cycle | `kPlayerFits` + `nextFitIndex` in player_chrome.dart | verbatim trio and order |
-| Accent #FF4D57 (app_colors.dart) | `PlayerChrome.accent` | verbatim value |
+| lib/player/player_controls_overlay.dart | features/player/player_controls_overlay.dart | PlayerCubit/PlayerState replaced by the `ZmixPlayerSurface` seam (`MediaKitPlayerSurface` in production, fakes in widget tests — a real media_kit Player needs native libmpv and cannot exist in a VM test); l10n lookups replaced by inline Arabic; episode facts arrive as plain fields; `transportHidden` flag added so ZMIX's centered double-tap seek pill never overlaps the center transport; `_fitIcon` maps ZMIX's Arabic fit labels; the 'more' spec returns null while its panel has no rows |
+| lib/player/player_seek_bar.dart | features/player/player_seek_bar.dart | `part of` kept; scrub-preview bubble (SeekPreview storyboard frames) omitted — ZMIX has no storyboard source; the time bubble and all slider logic kept |
+| lib/player/player_controls_widgets.dart | features/player/player_controls_widgets.dart | `part of` kept; see above for `_fitIcon` |
+| lib/player/player_controls_config.dart | features/player/player_controls_config.dart | near-verbatim; unsupported ids fall through to null via upstream's own skip mechanism |
+| lib/player/app_text.dart | core/theme/app_text.dart | near-verbatim (styles carry their own CJK/sans-serif fallback chain) |
+| lib/player/app_colors.dart | core/theme/app_colors.dart | near-verbatim (accent #FF4D57) |
+| lib/player/frosted_surface.dart | core/ui/frosted_surface.dart | near-verbatim (used by the More panel) |
 
-Not yet ported: continuous pinch-zoom 1-4x (player_screen.dart ~2408-2460)
-and the native sleep timer. Tracked as remaining work.
+Material upstream omissions (features ZMIX does not have; they take nullable
+callbacks / fall through upstream's null-skip rather than pretending):
+cast, decoder switch, enhance, colour profiles, snapshot, sleep timer, PiP,
+minimize, engine switch, ambient mode, room chat, info panel, episodes
+panel, sources, subtitle/audio tracks, MegaSkip pill, settings shortcut,
+Jikan filler badge, scrub storyboard previews, the TV controls variant, and
+upstream's speed/sleep/settings sheets (ZMIX keeps its own speed cycling;
+rotate is dropped because ZMIX is landscape-locked). The 'more' overflow
+panel is ported but has no rows yet, so its button drops out until one
+exists. Dormant upstream elements carried with the literal copy and not
+currently rendered: `_showMore`, `_placedAnywhere`, `_MegaSkipPill`,
+`_RoundIconButton`, `_MoreRow` (analyzer documents them as unused elements).
+
+ZMIX-specific player extras with NO upstream counterpart, in
+`lib/player_hud.dart` and `lib/player_page.dart`: double-tap ±10s seek with
+the centered `SeekIndicator` pill, drag-anywhere scrub (live throttled
+seek, since the ported bar renders the position stream), vertical-drag
+brightness/volume with `PlayerHud`, long-press 2x boost with `BoostBadge`,
+`LockOverlay` for the locked state, pinch-to-zoom 1-4x with pan (ported
+earlier from player_screen.dart), and `PlayerErrorPanel` whose layout
+follows upstream `drm_player_screen.dart`'s error state (centered icon +
+message + Close/Try again on a dark backing). The fit trio
+(contain/cover/fill) lives in `lib/player_chrome.dart` as `kPlayerFits`
+(verbatim trio and order) alongside the `QualityListSheet` below.
 
 ## Quality picker
 

@@ -1,0 +1,11 @@
+--- upstream/features/player/player_controls_config.dart
++++ zmix/lib/player/player_controls_config.dart
+@@ -1,3 +1,8 @@
++// Ported from Zangetsu (https://github.com/Spyou/Zangetsu), GPL-3.0,
++// features/player/player_controls_config.dart at upstream commit 772fac56d265b238b90118bd68abe2e7353b1f6e.
++// Literal copy with integration edits only; each edit is marked ZMIX-EDIT.
++// ZMIX remains GPL-3.0.
++
+ import 'package:flutter/material.dart';
+ 
+ /// The set of player bottom-bar controls the user can arrange.
