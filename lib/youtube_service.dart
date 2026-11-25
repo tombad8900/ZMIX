@@ -37,10 +37,13 @@ class YoutubeService {
       fetcher.close();
     }
     final videos = result.videos;
-    // Honest count handling: even a fully paginated import can come back
-    // short of YouTube's declared videoCount (deleted/private/duplicated
-    // entries are counted in the header but never served). Surface that as
-    // its own state instead of implying the library holds every video.
+    // Honest count handling: the fetcher follows YouTube's own
+    // "show unavailable videos" view, so a complete import contains every
+    // entry the site can serve, hidden ones flagged. A residual guard
+    // remains: if the served total still falls short of YouTube's declared
+    // header count, surface that as its own state instead of implying the
+    // library holds every video. Import completeness is about the entry
+    // list; whether any entry actually plays is decided at playback time.
     final declared = playlist.videoCount;
     var complete = result.complete;
     String? note = result.stopReason;
@@ -67,6 +70,8 @@ class YoutubeService {
       importComplete: complete,
       totalCountHint: playlist.videoCount,
       importNote: note,
+      hiddenUntitledCount: result.hiddenUntitled,
+      hiddenTitledCount: result.hiddenTitled,
     );
   }
 

@@ -3,18 +3,21 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:zmix/models.dart';
 import 'package:zmix/playlist_fetcher.dart';
 
-/// Builds one InnerTube browse page with [ids] lockupViewModel video entries
-/// and an optional continuation token to the next page.
-String _page(List<String> ids, {String? nextToken}) {
-  Map<String, dynamic> lockup(String id) => {
+/// Builds one InnerTube browse page with lockupViewModel video entries.
+/// [ids] are titled entries; [untitledIds] are served with metadata but no
+/// title, the way YouTube serves deleted/private videos in its own
+/// "show unavailable videos" view.
+String _page(List<String> ids, {String? nextToken, List<String> untitledIds = const []}) {
+  Map<String, dynamic> lockup(String id, {bool untitled = false}) => {
         'lockupViewModel': {
           'contentId': id,
           'contentType': 'LOCKUP_CONTENT_TYPE_VIDEO',
           'metadata': {
             'lockupMetadataViewModel': {
-              'title': {'content': 'Video $id'}
+              'title': {'content': untitled ? '' : 'Video $id'}
             }
           },
           'contentImage': {
@@ -35,7 +38,10 @@ String _page(List<String> ids, {String? nextToken}) {
         }
       };
   final map = <String, dynamic>{
-    'contents': ids.map(lockup).toList(),
+    'contents': [
+      ...ids.map((id) => lockup(id)),
+      ...untitledIds.map((id) => lockup(id, untitled: true)),
+    ],
   };
   if (nextToken != null) {
     map['onResponseReceivedActions'] = [
@@ -127,5 +133,68 @@ void main() {
     final fetcher = PlaylistFetcher(client: client);
     expect(() => fetcher.fetchVideos('fixture'), throwsA(anything));
     fetcher.close();
+  });
+
+  test('classifies hidden entries from the show-unavailable view', () async {
+    // Phase A (default view): 3 titled entries, one duplicated position.
+    // Phase B (params = show unavailable): same 3 + a titled hidden entry +
+    // an untitled hidden entry, order and duplicates preserved.
+    String id(String n) => n.padRight(11, 'x');
+    final client = MockClient((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      if (body.containsKey('params')) {
+        expect(body['params'], PlaylistFetcher.showUnavailableParams);
+        return http.Response(
+            _page([id('a'), id('b'), id('a'), id('hidden1')],
+                untitledIds: [id('gone1')]),
+            200);
+      }
+      return http.Response(_page([id('a'), id('b'), id('a')]), 200);
+    });
+    final fetcher = PlaylistFetcher(client: client);
+    final result = await fetcher.fetchVideos('fixture');
+    expect(result.complete, isTrue);
+    expect(result.videos.map((v) => v.id).toList(),
+        [id('a'), id('b'), id('a'), id('hidden1'), id('gone1')]);
+    expect(result.videos.map((v) => v.visibility).toList(),
+        ['visible', 'visible', 'visible', 'hiddenTitled', 'hiddenUntitled']);
+    expect(result.hiddenTitled, 1);
+    expect(result.hiddenUntitled, 1);
+    fetcher.close();
+  });
+
+  test('show-unavailable pass failure falls back to the default import',
+      () async {
+    String id(String n) => n.padRight(11, 'x');
+    final client = MockClient((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      if (body.containsKey('params')) {
+        return http.Response('server error', 500);
+      }
+      return http.Response(_page([id('a'), id('b')]), 200);
+    });
+    final fetcher = PlaylistFetcher(client: client);
+    final result = await fetcher.fetchVideos('fixture');
+    expect(result.complete, isFalse);
+    expect(result.stopReason, 'network');
+    expect(result.videos.length, 2);
+    expect(result.videos.every((v) => v.visibility == 'visible'), isTrue);
+    fetcher.close();
+  });
+
+  test('model round-trip keeps visibility and hidden counts', () {
+    // through LibraryPlaylist JSON persistence
+    final video = LibraryVideo(
+        id: 'abcdefghijk', title: '', thumbUrl: '', visibility: 'hiddenUntitled');
+    expect(video.isSourceUntitled, isTrue);
+    final back = LibraryVideo.fromJson(video.toJson());
+    expect(back.visibility, 'hiddenUntitled');
+    expect(back.isSourceUntitled, isTrue);
+    final legacy = LibraryVideo.fromJson({
+      'id': 'abcdefghijk',
+      'title': 't',
+      'thumbUrl': '',
+    });
+    expect(legacy.visibility, 'visible');
   });
 }

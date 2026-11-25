@@ -13,6 +13,8 @@ class FetchResult {
     required this.videos,
     required this.complete,
     this.stopReason,
+    this.hiddenUntitled = 0,
+    this.hiddenTitled = 0,
   });
 
   final List<LibraryVideo> videos;
@@ -20,6 +22,12 @@ class FetchResult {
 
   /// 'cancelled' | 'network' | 'ceiling' when [complete] is false.
   final String? stopReason;
+
+  /// Entries only served through YouTube's "show unavailable videos" view:
+  /// [hiddenUntitled] came back with no title (deleted/private in practice),
+  /// [hiddenTitled] kept a title but is hidden from the default view.
+  final int hiddenUntitled;
+  final int hiddenTitled;
 }
 
 /// ZMIX's own playlist-video fetcher.
@@ -51,7 +59,28 @@ class PlaylistFetcher {
   /// of 2,000+ videos imports in full.
   static const int maxVideos = 20000;
 
+  /// YouTube's "Show unavailable videos" toggle parameter. The default
+  /// playlist browse hides unavailable entries (its own INFO alert says
+  /// "Unavailable videos are hidden"); the site issues the same browse with
+  /// this params value to include them. Verified live 2026-11-25 on a real
+  /// 625-entry playlist: default chain served 298 entries and ended with no
+  /// continuation; the same playlist with this params served all 625.
+  static const String showUnavailableParams = 'wgYCCAA=';
+
   /// Fetches every video of [playlistId], following continuation pages.
+  ///
+  /// Two passes over the same public endpoint:
+  ///  1. the default view (what a logged-out browser sees scrolling), whose
+  ///     entry ids mark YouTube's own "shown by default" set;
+  ///  2. the show-unavailable view ([showUnavailableParams]), which serves
+  ///     every entry including hidden ones.
+  /// Each entry is classified from that evidence: in the default set ->
+  /// 'visible'; otherwise empty title -> 'hiddenUntitled', real title ->
+  /// 'hiddenTitled'. Positions and duplicates are preserved (no dedup).
+  ///
+  /// Fallback when pass 2 fails (network/cancel after pass 1 succeeded):
+  /// returns pass 1's entries, all 'visible', marked incomplete - never a
+  /// silent drop of the unavailable entries from a partial result.
   ///
   /// [onProgress] is called after each page with the cumulative count.
   /// [isCancelled] is polled between pages; when it returns true the fetch
@@ -64,18 +93,92 @@ class PlaylistFetcher {
     void Function(int fetched)? onProgress,
     bool Function()? isCancelled,
   }) async {
+    // Pass 1: default view.
+    final pass1 = await _fetchChain(
+      {'context': _context, 'browseId': 'VL$playlistId'},
+      onProgress: onProgress,
+      isCancelled: isCancelled,
+    );
+    if (!pass1.complete) {
+      return FetchResult(
+        videos: pass1.videos,
+        complete: false,
+        stopReason: pass1.stopReason,
+      );
+    }
+    final defaultIds = {for (final v in pass1.videos) v.id};
+
+    // Pass 2: show-unavailable view (every entry).
+    final pass2 = await _fetchChain(
+      {
+        'context': _context,
+        'browseId': 'VL$playlistId',
+        'params': showUnavailableParams,
+      },
+      onProgress: onProgress,
+      isCancelled: isCancelled,
+      firstPageFailureThrows: false,
+    );
+    if (!pass2.complete || pass2.videos.length < pass1.videos.length) {
+      // Documented fallback: keep the complete default-view import and mark
+      // the unavailable-entry pass as the part that failed.
+      return FetchResult(
+        videos: pass1.videos,
+        complete: false,
+        stopReason: pass2.complete ? 'network' : pass2.stopReason,
+      );
+    }
+
+    // Classify each entry from YouTube's own serving behaviour: membership
+    // in the default view means 'visible'; a hidden entry with a real title
+    // is 'hiddenTitled' (playability unknown until attempted); a hidden
+    // entry with no title is 'hiddenUntitled' (deleted/private in practice).
+    var hiddenUntitled = 0;
+    var hiddenTitled = 0;
+    final videos = <LibraryVideo>[];
+    for (final v in pass2.videos) {
+      final visibility = defaultIds.contains(v.id)
+          ? 'visible'
+          : (v.title.isEmpty ? 'hiddenUntitled' : 'hiddenTitled');
+      if (visibility == 'hiddenUntitled') {
+        hiddenUntitled++;
+      } else if (visibility == 'hiddenTitled') {
+        hiddenTitled++;
+      }
+      videos.add(LibraryVideo(
+        id: v.id,
+        title: v.title,
+        thumbUrl: v.thumbUrl,
+        durationSeconds: v.durationSeconds,
+        visibility: visibility,
+      ));
+    }
+    return FetchResult(
+      videos: videos,
+      complete: true,
+      hiddenUntitled: hiddenUntitled,
+      hiddenTitled: hiddenTitled,
+    );
+  }
+
+  /// One paginated browse chain. [firstPage] failure throws by default;
+  /// pass 2 sets [firstPageFailureThrows] false so its failure falls back to
+  /// the completed pass 1 instead of losing the import entirely.
+  Future<({List<LibraryVideo> videos, bool complete, String? stopReason})>
+      _fetchChain(
+    Map<String, dynamic> firstBody, {
+    void Function(int fetched)? onProgress,
+    bool Function()? isCancelled,
+    bool firstPageFailureThrows = true,
+  }) async {
     final videos = <LibraryVideo>[];
     // No deduplication: repeated videos are real playlist positions
     // (verified on a live playlist - same video at positions 23/35/50).
     var firstPage = true;
-    Map<String, dynamic> body = {
-      'context': _context,
-      'browseId': 'VL$playlistId',
-    };
+    var body = firstBody;
     while (true) {
       if (isCancelled?.call() ?? false) {
-        return FetchResult(
-            videos: videos, complete: false, stopReason: 'cancelled');
+        return (videos: videos, complete: false, stopReason: 'cancelled');
       }
       http.Response response;
       dynamic decoded;
@@ -88,9 +191,8 @@ class PlaylistFetcher {
         }
         decoded = jsonDecode(utf8.decode(response.bodyBytes));
       } catch (_) {
-        if (firstPage) rethrow;
-        return FetchResult(
-            videos: videos, complete: false, stopReason: 'network');
+        if (firstPage && firstPageFailureThrows) rethrow;
+        return (videos: videos, complete: false, stopReason: 'network');
       }
       firstPage = false;
       final lockups = <Map<String, dynamic>>[];
@@ -108,12 +210,11 @@ class PlaylistFetcher {
       }
       onProgress?.call(videos.length);
       if (videos.length >= maxVideos) {
-        return FetchResult(
-            videos: videos, complete: false, stopReason: 'ceiling');
+        return (videos: videos, complete: false, stopReason: 'ceiling');
       }
       final token = _findContinuation(decoded);
       if (token == null || newOnThisPage == 0) {
-        return FetchResult(videos: videos, complete: true);
+        return (videos: videos, complete: true, stopReason: null);
       }
       body = {'context': _context, 'continuation': token};
       // Gentle pacing between pages, like a user scrolling.
@@ -125,8 +226,10 @@ class PlaylistFetcher {
     try {
       final metadata =
           lockup['metadata']?['lockupMetadataViewModel'] as Map<String, dynamic>?;
-      final title = metadata?['title']?['content'] as String?;
-      if (title == null || title.isEmpty) return null;
+      // Untitled entries are kept: YouTube serves deleted/private videos as
+      // lockups with a valid contentId and no title; the caller classifies
+      // them ('hiddenUntitled') instead of dropping them.
+      final title = metadata?['title']?['content'] as String? ?? '';
       final overlays = lockup['contentImage']?['thumbnailViewModel']?['overlays']
           as List<dynamic>?;
       int? durationSeconds;

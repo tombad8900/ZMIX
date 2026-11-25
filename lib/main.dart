@@ -70,15 +70,32 @@ void _seedDemo(LibraryStore store) {
         url: 'https://www.youtube.com/playlist?list=PLdemo3',
         author: 'Demo Channel',
         thumbUrl: ThumbnailSet('jNQXAC9IVRw').highResUrl,
-        videos: List.generate(
-          298,
-          (i) => demoVideo(
-              'dQw4w9WgXcQ', 'فيلم كلاسيكي رقم ${i + 1}', 5400 + i * 7),
-        ),
+        // Mirrors the real 625-entry playlist's verified shape (2026-11-25):
+        // 298 default-visible + 118 hidden-with-title + 209 untitled.
+        videos: [
+          for (var i = 0; i < 298; i++)
+            demoVideo('dQw4w9WgXcQ', 'فيلم كلاسيكي رقم ${i + 1}', 5400 + i * 7),
+          for (var i = 0; i < 118; i++)
+            LibraryVideo(
+              id: 'dQw4w9WgXcQ',
+              title: 'فيلم مخفي رقم ${i + 1}',
+              thumbUrl: ThumbnailSet('dQw4w9WgXcQ').highResUrl,
+              durationSeconds: 3600,
+              visibility: 'hiddenTitled',
+            ),
+          for (var i = 0; i < 209; i++)
+            LibraryVideo(
+              id: 'dQw4w9WgXcQ',
+              title: '',
+              thumbUrl: ThumbnailSet('dQw4w9WgXcQ').highResUrl,
+              visibility: 'hiddenUntitled',
+            ),
+        ],
         addedAt: DateTime.now(),
-        importComplete: false,
+        importComplete: true,
         totalCountHint: 625,
-        importNote: 'short_of_declared',
+        hiddenUntitledCount: 209,
+        hiddenTitledCount: 118,
       ),
   ]);
 }

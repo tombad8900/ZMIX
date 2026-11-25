@@ -208,10 +208,24 @@ class _AddPlaylistSheetState extends State<AddPlaylistSheet> {
       if (!playlist.importComplete) {
         // Partial import stays visibly partial; never implied complete.
         final detail = playlist.importNote == 'short_of_declared'
-            ? 'اتجاب ${playlist.videos.length} مدخل من أصل ${playlist.totalCountHint} معلنة في يوتيوب. سبب الفرق لسه مش متأكد (ممكن فيديوهات محذوفة/خاصة أو قيود عرض من يوتيوب) - مش مؤكد إن الباقي متاح.'
+            ? 'اتجاب ${playlist.videos.length} مدخل من أصل ${playlist.totalCountHint} معلنة في يوتيوب. الفرق غالبًا فيديوهات يوتيوب نفسه مش بيقدمها حتى في عرض "إظهار غير المتاح" - مش مؤكد إن الباقي متاح.'
             : 'اتحفظ ${playlist.videos.length} فيديو بس - الاستيراد مكملش للآخر. إعادة إضافة القايمة بتستكملها.';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(detail),
+          duration: const Duration(seconds: 7),
+        ));
+      } else if (playlist.hiddenUntitledCount > 0 ||
+          playlist.hiddenTitledCount > 0) {
+        // Complete import with YouTube-hidden entries: honest counts.
+        final parts = <String>[
+          if (playlist.hiddenUntitledCount > 0)
+            '${playlist.hiddenUntitledCount} بلا عنوان (غالبًا محذوف أو خاص)',
+          if (playlist.hiddenTitledCount > 0)
+            '${playlist.hiddenTitledCount} يوتيوب بيخفيهم من العرض الافتراضي',
+        ];
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'اتحفظت القايمة كاملة: ${playlist.videos.length} مدخل - منهم ${parts.join(' و')}. تشغيل أي مدخل بيتحدد عند فتحه.'),
           duration: const Duration(seconds: 7),
         ));
       }
@@ -461,17 +475,26 @@ class _VideoShelf extends StatelessWidget {
           final video = videos[i];
           return SizedBox(
             width: posterRowWidth(context),
-            child: PosterCard(
-              title: video.title,
-              imageUrl: video.thumbUrl.isEmpty ? null : video.thumbUrl,
-              tags: [
-                if (video.durationLabel.isNotEmpty) video.durationLabel,
-              ],
-              onTap: () => playLibraryVideo(
-                context,
-                store: store,
-                playlist: playlist,
-                video: video,
+            child: Opacity(
+              opacity: video.isSourceUntitled
+                  ? 0.45
+                  : (video.visibility == 'hiddenTitled' ? 0.8 : 1),
+              child: PosterCard(
+                title: video.isSourceUntitled ? 'فيديو غير متاح' : video.title,
+                imageUrl: video.thumbUrl.isEmpty ? null : video.thumbUrl,
+                tags: [
+                  if (video.isSourceUntitled)
+                    'غير متاح'
+                  else if (video.visibility == 'hiddenTitled')
+                    'مخفي افتراضيًا',
+                  if (video.durationLabel.isNotEmpty) video.durationLabel,
+                ],
+                onTap: () => playLibraryVideo(
+                  context,
+                  store: store,
+                  playlist: playlist,
+                  video: video,
+                ),
               ),
             ),
           );

@@ -194,19 +194,32 @@ class _PlaylistPageState extends State<PlaylistPage> {
               (context, i) {
                 final video = videos[i];
                 final resolving = _resolvingId == video.id;
+                // YouTube-sourced visibility: untitled entries are shown
+                // dimmed with a fallback title; titled-but-hidden entries
+                // carry a small note tag. Positions are never reshuffled.
+                final untitled = video.isSourceUntitled;
+                final hiddenTitled = video.visibility == 'hiddenTitled';
                 return Stack(
                   children: [
                     Positioned.fill(
-                      child: PosterCard(
-                        title: video.title,
-                        imageUrl:
-                            video.thumbUrl.isEmpty ? null : video.thumbUrl,
-                        tags: [
-                          if (video.durationLabel.isNotEmpty)
-                            video.durationLabel,
-                        ],
-                        cellWidth: cellWidth,
-                        onTap: () => _play(video),
+                      child: Opacity(
+                        opacity: untitled ? 0.45 : (hiddenTitled ? 0.8 : 1),
+                        child: PosterCard(
+                          title:
+                              untitled ? 'فيديو غير متاح' : video.title,
+                          imageUrl:
+                              video.thumbUrl.isEmpty ? null : video.thumbUrl,
+                          tags: [
+                            if (untitled)
+                              'غير متاح'
+                            else if (hiddenTitled)
+                              'مخفي افتراضيًا',
+                            if (video.durationLabel.isNotEmpty)
+                              video.durationLabel,
+                          ],
+                          cellWidth: cellWidth,
+                          onTap: () => _play(video),
+                        ),
                       ),
                     ),
                     if (resolving)

@@ -7,6 +7,7 @@ class LibraryVideo {
     required this.title,
     required this.thumbUrl,
     this.durationSeconds,
+    this.visibility = 'visible',
   });
 
   final String id;
@@ -14,11 +15,23 @@ class LibraryVideo {
   final String thumbUrl;
   final int? durationSeconds;
 
+  /// YouTube's own visibility for this entry, grounded in how the site
+  /// serves it: 'visible' (in the default playlist view), 'hiddenTitled'
+  /// (only served via YouTube's "show unavailable videos" view, but with a
+  /// real title/thumbnail - may or may not play; visibility alone does not
+  /// establish playability), or 'hiddenUntitled' (served with no title -
+  /// YouTube gives no reason; deleted or private in practice). Older saved
+  /// libraries have no value and count as 'visible'.
+  final String visibility;
+
+  bool get isSourceUntitled => visibility == 'hiddenUntitled';
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
         'thumbUrl': thumbUrl,
         'durationSeconds': durationSeconds,
+        'visibility': visibility,
       };
 
   factory LibraryVideo.fromJson(Map<String, dynamic> j) => LibraryVideo(
@@ -26,6 +39,7 @@ class LibraryVideo {
         title: j['title'] as String,
         thumbUrl: j['thumbUrl'] as String? ?? '',
         durationSeconds: j['durationSeconds'] as int?,
+        visibility: j['visibility'] as String? ?? 'visible',
       );
 
   String get durationLabel {
@@ -51,6 +65,8 @@ class LibraryPlaylist {
     this.importComplete = true,
     this.totalCountHint,
     this.importNote,
+    this.hiddenUntitledCount = 0,
+    this.hiddenTitledCount = 0,
   });
 
   final String id;
@@ -74,6 +90,13 @@ class LibraryPlaylist {
   /// serves, e.g. deleted/private/duplicated entries).
   final String? importNote;
 
+  /// Entries only served through YouTube's "show unavailable videos" view.
+  /// [hiddenUntitledCount] came back with no title (deleted/private in
+  /// practice); [hiddenTitledCount] kept a real title but YouTube hides
+  /// them from the default view (playability unknown until attempted).
+  final int hiddenUntitledCount;
+  final int hiddenTitledCount;
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -85,6 +108,8 @@ class LibraryPlaylist {
         'importComplete': importComplete,
         'totalCountHint': totalCountHint,
         'importNote': importNote,
+        'hiddenUntitledCount': hiddenUntitledCount,
+        'hiddenTitledCount': hiddenTitledCount,
       };
 
   factory LibraryPlaylist.fromJson(Map<String, dynamic> j) => LibraryPlaylist(
@@ -101,6 +126,8 @@ class LibraryPlaylist {
         importComplete: j['importComplete'] as bool? ?? true,
         totalCountHint: j['totalCountHint'] as int?,
         importNote: j['importNote'] as String?,
+        hiddenUntitledCount: j['hiddenUntitledCount'] as int? ?? 0,
+        hiddenTitledCount: j['hiddenTitledCount'] as int? ?? 0,
       );
 }
 
