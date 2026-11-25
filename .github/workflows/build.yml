@@ -28,6 +28,19 @@ jobs:
         with:
           channel: 'stable'
           cache: true
+      - name: Set up stable release signing
+        env:
+          ZMIX_KEYSTORE_B64: ${{ secrets.ZMIX_KEYSTORE_B64 }}
+          ZMIX_KEYSTORE_PASSWORD: ${{ secrets.ZMIX_KEYSTORE_PASSWORD }}
+          ZMIX_KEY_ALIAS: ${{ secrets.ZMIX_KEY_ALIAS }}
+        run: |
+          echo "$ZMIX_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/zmix.keystore"
+          {
+            echo "storeFile=$RUNNER_TEMP/zmix.keystore"
+            echo "storePassword=$ZMIX_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ZMIX_KEY_ALIAS"
+            echo "keyPassword=$ZMIX_KEYSTORE_PASSWORD"
+          } > android/key.properties
       - run: flutter pub get
       - name: Build arm64 release APK
         run: flutter build apk --release --target-platform android-arm64

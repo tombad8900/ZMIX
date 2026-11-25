@@ -108,8 +108,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                   ),
                   Text(
                     [
-                      if (playlist.author.isNotEmpty) playlist.author,
                       '${playlist.videos.length} فيديو',
+                      if (playlist.author.isNotEmpty) playlist.author,
                     ].join(' · '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

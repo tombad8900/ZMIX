@@ -74,7 +74,7 @@ class SettingsPage extends StatelessWidget {
             leading: Icon(Icons.info_outline),
             title: Text('ZMIX'),
             subtitle: Text(
-              'نسخة $appVersion\nمكتبتك السينمائية لقوائم يوتيوب. كل البيانات محفوظة على جهازك بس.\nالشكل مستوحى من Zangetsu وCloudstream، والكود مفتوح المصدر تحت GPL-3.0.',
+              'نسخة $appVersion\nمكتبتك السينمائية لقوائم يوتيوب. بيانات المكتبة محفوظة على جهازك، وجلب القوائم والتشغيل بيتم من خلال يوتيوب.\nالشكل مستوحى من Zangetsu وCloudstream، والكود مفتوح المصدر تحت GPL-3.0.',
               style: TextStyle(height: 1.7),
             ),
           ),

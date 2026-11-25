@@ -181,7 +181,24 @@ class _PlaylistCard extends StatelessWidget {
     );
     if (!context.mounted) return;
     if (action == 'delete') {
-      await store.removePlaylist(playlist.id);
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('حذف القائمة؟'),
+          content: const Text('القائمة هتتشال من المكتبة. سجل المشاهدة هيفضل زي ما هو.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('حذف'),
+            ),
+          ],
+        ),
+      );
+      if (ok == true) await store.removePlaylist(playlist.id);
     } else if (action == 'rename') {
       final controller = TextEditingController(text: playlist.name);
       final newName = await showDialog<String>(
