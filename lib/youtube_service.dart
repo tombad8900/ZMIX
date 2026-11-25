@@ -1,0 +1,58 @@
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+
+import 'models.dart';
+
+/// Thin wrapper over youtube_explode_dart for the library flows.
+class YoutubeService {
+  YoutubeService() : _yt = YoutubeExplode();
+
+  final YoutubeExplode _yt;
+
+  static const int _maxVideosPerPlaylist = 200;
+
+  /// Fetches a playlist's real metadata and video list from YouTube.
+  /// Throws [FormatException] when the link is not a playlist link.
+  Future<LibraryPlaylist> fetchPlaylist(String input, {String? nickname}) async {
+    final parsed = PlaylistId.parsePlaylistId(input.trim());
+    if (parsed == null) {
+      throw const FormatException('مش قادر أفهم الرابط ده كقائمة تشغيل يوتيوب');
+    }
+    final playlist = await _yt.playlists.get(PlaylistId(parsed));
+    final videos = <LibraryVideo>[];
+    await for (final v in _yt.playlists.getVideos(playlist.id)) {
+      videos.add(LibraryVideo(
+        id: v.id.value,
+        title: v.title,
+        thumbUrl: ThumbnailSet(v.id.value).highResUrl,
+        durationSeconds: v.duration?.inSeconds,
+      ));
+      if (videos.length >= _maxVideosPerPlaylist) break;
+    }
+    final name = (nickname != null && nickname.trim().isNotEmpty)
+        ? nickname.trim()
+        : playlist.title;
+    return LibraryPlaylist(
+      id: playlist.id.value,
+      name: name,
+      url: playlist.url,
+      author: playlist.author,
+      thumbUrl: videos.isNotEmpty
+          ? videos.first.thumbUrl
+          : playlist.thumbnails.highResUrl,
+      videos: videos,
+      addedAt: DateTime.now(),
+    );
+  }
+
+  /// Resolves a playable muxed stream URL for a video.
+  Future<({String url, String quality})> resolvePlayable(String videoId) async {
+    final manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
+    if (manifest.muxed.isEmpty) {
+      throw const FormatException('مفيش صيغة تشغيل مدمجة متاحة للفيديو ده');
+    }
+    final stream = manifest.muxed.withHighestBitrate();
+    return (url: stream.url.toString(), quality: stream.videoQuality.name);
+  }
+
+  void close() => _yt.close();
+}

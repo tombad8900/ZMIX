@@ -1,7 +1,7 @@
 name: zmix
 description: "ZMIX - YouTube playlist cinema library"
 publish_to: "none"
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ^3.9.0
@@ -17,6 +17,9 @@ dependencies:
   media_kit_video: ^1.2.5
   media_kit_libs_video: ^1.0.5
   intl: any
+  path_provider: ^2.1.4
+  cached_network_image: ^3.4.1
+  palette_generator: ^0.3.3+7
 
 dev_dependencies:
   flutter_test:

@@ -1,17 +1,68 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:media_kit_video/media_kit_video.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' hide Video;
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-void main() {
+import 'history_page.dart';
+import 'library_page.dart';
+import 'models.dart';
+import 'settings_page.dart';
+import 'storage.dart';
+
+/// Dev-only seed for UI verification builds (flutter run/build with
+/// --dart-define DEMO_SEED=true). Never enabled in release APKs.
+const bool kDemoSeed = bool.fromEnvironment('DEMO_SEED');
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  runApp(const ZmixTrialApp());
+  final store = LibraryStore();
+  await store.load();
+  if (kDemoSeed && store.playlists.isEmpty) {
+    _seedDemo(store);
+  }
+  runApp(ZmixApp(store: store));
 }
 
-class ZmixTrialApp extends StatelessWidget {
-  const ZmixTrialApp({super.key});
+void _seedDemo(LibraryStore store) {
+  LibraryVideo demoVideo(String id, String title, int seconds) => LibraryVideo(
+        id: id,
+        title: title,
+        thumbUrl: ThumbnailSet(id).highResUrl,
+        durationSeconds: seconds,
+      );
+  store.playlists.addAll([
+    LibraryPlaylist(
+      id: 'demo1',
+      name: 'كلاسيكيات يوتيوب',
+      url: 'https://www.youtube.com/playlist?list=PLdemo1',
+      author: 'YouTube',
+      thumbUrl: ThumbnailSet('jNQXAC9IVRw').highResUrl,
+      videos: [
+        demoVideo('jNQXAC9IVRw', 'Me at the zoo', 19),
+        demoVideo('dQw4w9WgXcQ',
+            'Rick Astley - Never Gonna Give You Up (Official Video)', 213),
+      ],
+      addedAt: DateTime.now(),
+    ),
+    LibraryPlaylist(
+      id: 'demo2',
+      name: 'موسيقى',
+      url: 'https://www.youtube.com/playlist?list=PLdemo2',
+      author: 'YouTube Music',
+      thumbUrl: ThumbnailSet('9bZkp7q19f0').highResUrl,
+      videos: [
+        demoVideo('9bZkp7q19f0', 'PSY - GANGNAM STYLE(강남스타일) M/V', 253),
+      ],
+      addedAt: DateTime.now(),
+    ),
+  ]);
+}
+
+class ZmixApp extends StatelessWidget {
+  const ZmixApp({super.key, required this.store});
+
+  final LibraryStore store;
 
   @override
   Widget build(BuildContext context) {
@@ -31,203 +82,73 @@ class ZmixTrialApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF7C6CFF),
           brightness: Brightness.dark,
+          surface: const Color(0xFF14141B),
         ),
         useMaterial3: true,
         fontFamily: 'Naskh',
       ),
-      home: const TrialHome(),
+      home: ZmixShell(store: store),
     );
   }
 }
 
-class TrialHome extends StatefulWidget {
-  const TrialHome({super.key});
+class ZmixShell extends StatefulWidget {
+  const ZmixShell({super.key, required this.store});
+
+  final LibraryStore store;
 
   @override
-  State<TrialHome> createState() => _TrialHomeState();
+  State<ZmixShell> createState() => _ZmixShellState();
 }
 
-class _TrialHomeState extends State<TrialHome> {
-  final TextEditingController _urlController = TextEditingController(
-    text: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
-  );
-  final List<String> _log = [];
-  bool _busy = false;
-
-  void _addLog(String line) {
-    setState(() => _log.insert(0, line));
-  }
-
-  Future<void> _resolveAndPlay() async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    final yt = YoutubeExplode();
-    try {
-      final input = _urlController.text.trim();
-      _addLog('⏳ بنقرأ الفيديو: $input');
-      final videoId = VideoId.parseVideoId(input);
-      if (videoId == null) {
-        _addLog('❌ مش قادر أفهم الرابط ده كفيديو يوتيوب');
-        return;
-      }
-      final video = await yt.videos.get(VideoId(videoId));
-      _addLog('✅ العنوان: ${video.title}');
-      _addLog('⏳ بنجهّز رابط التشغيل...');
-      final manifest = await yt.videos.streamsClient.getManifest(video.id);
-      if (manifest.muxed.isEmpty) {
-        _addLog('❌ مفيش صيغة تشغيل مدمجة (muxed) متاحة');
-        return;
-      }
-      final stream = manifest.muxed.withHighestBitrate();
-      _addLog('✅ الرابط جاهز: ${stream.videoQuality.name} / ${stream.size.totalMegaBytes.toStringAsFixed(1)}MB');
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => TrialPlayerScreen(
-            title: video.title,
-            streamUrl: stream.url.toString(),
-          ),
-        ),
-      );
-      _addLog('👋 رجعنا من المشغّل');
-    } catch (e) {
-      _addLog('❌ خطأ: $e');
-    } finally {
-      yt.close();
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('ZMIX Trial 0.1'),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'تجربة تشغيل يوتيوب داخل ZMIX\nالصق رابط فيديو ودوس تشغيل. لو حصل خطأ، ابعت سكرين شوت من اللوج اللي تحت.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFFA7A7B2), height: 1.6),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _urlController,
-              textDirection: TextDirection.ltr,
-              decoration: InputDecoration(
-                hintText: 'https://www.youtube.com/watch?v=...',
-                hintStyle: const TextStyle(color: Color(0xFF6E6E78)),
-                filled: true,
-                fillColor: const Color(0xFF17171E),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: _busy ? null : _resolveAndPlay,
-              icon: const Icon(Icons.play_arrow_rounded),
-              label: Text(_busy ? 'بنجهّز...' : 'تشغيل'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF121218),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0x14FFFFFF)),
-                ),
-                child: ListView.builder(
-                  itemCount: _log.length,
-                  itemBuilder: (context, i) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
-                    child: Text(
-                      _log[i],
-                      style: const TextStyle(fontSize: 12.5, height: 1.5, color: Color(0xFFD8D8DE)),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class TrialPlayerScreen extends StatefulWidget {
-  const TrialPlayerScreen({super.key, required this.title, required this.streamUrl});
-
-  final String title;
-  final String streamUrl;
-
-  @override
-  State<TrialPlayerScreen> createState() => _TrialPlayerScreenState();
-}
-
-class _TrialPlayerScreenState extends State<TrialPlayerScreen> {
-  late final Player _player;
-  late final VideoController _controller;
-  String? _error;
+class _ZmixShellState extends State<ZmixShell> {
+  int _tab = 0;
 
   @override
   void initState() {
     super.initState();
-    _player = Player();
-    _controller = VideoController(_player);
-    _player.stream.error.listen((e) {
-      if (mounted) setState(() => _error = e);
-    });
-    _player.open(Media(widget.streamUrl), play: true);
+    widget.store.addListener(_onStoreChanged);
+  }
+
+  void _onStoreChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _player.dispose();
+    widget.store.removeListener(_onStoreChanged);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final pages = [
+      LibraryPage(store: widget.store),
+      HistoryPage(store: widget.store),
+      SettingsPage(store: widget.store),
+    ];
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Video(controller: _controller),
-            ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  '❌ خطأ التشغيل: $_error',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.redAccent),
-                ),
-              ),
-          ],
-        ),
+      body: IndexedStack(index: _tab, children: pages),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        onDestinationSelected: (i) => setState(() => _tab = i),
+        backgroundColor: const Color(0xFF14141B),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.video_library_outlined),
+            selectedIcon: Icon(Icons.video_library_rounded),
+            label: 'المكتبة',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_rounded),
+            label: 'السجل',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings_rounded),
+            label: 'الإعدادات',
+          ),
+        ],
       ),
     );
   }
