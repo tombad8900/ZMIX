@@ -117,6 +117,7 @@ class PlayerControlsOverlay extends StatelessWidget {
     this.showQuality = false,
     this.visible = true,
     this.transportHidden = false, // ZMIX-EDIT
+    this.onEpisodes, // ZMIX-EDIT
   });
 
   final ZmixPlayerSurface player; // ZMIX-EDIT
@@ -156,6 +157,11 @@ class PlayerControlsOverlay extends StatelessWidget {
   /// center where this transport renders, so the page suppresses the
   /// transport while seek feedback is up instead of overlapping it.
   final bool transportHidden;
+
+  /// ZMIX-EDIT: opens the episodes panel (upstream had onEpisodes fed by
+  /// the cubit's episode list; ZMIX feeds it from the playlist siblings).
+  /// Null = single item, button drops out.
+  final VoidCallback? onEpisodes;
 
   /// Overflow panel that slides in from the RIGHT (like the episodes panel) —
   /// holds the occasional actions so the control bars stay clean.
@@ -278,6 +284,11 @@ class PlayerControlsOverlay extends StatelessWidget {
         // rather than a menu of other servers pretending to be qualities.
         if (!hasQualityChoices || onQuality == null) return null;
         return (Icons.high_quality_rounded, 'الجودة', onQuality!);
+      case 'episodes':
+        // ZMIX-EDIT: the panel exists (player_episodes_panel.dart port);
+        // upstream's own rule stands: one-off items get no episodes button.
+        if (onEpisodes == null) return null;
+        return (Icons.video_library_outlined, 'الحلقات', onEpisodes!);
       case 'more':
         // ZMIX-EDIT: the More panel has no rows yet (every upstream row
         // targets a feature ZMIX does not have), so the button that would

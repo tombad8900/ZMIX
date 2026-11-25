@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:zmix/player/player_controls_config.dart';
 import 'package:zmix/player/player_controls_overlay.dart';
+import 'package:zmix/player/player_episodes_panel.dart';
 import 'package:zmix/player_hud.dart';
 import 'package:zmix/player_page.dart';
 
@@ -53,6 +54,7 @@ Widget _overlay({
   bool hasNext = true,
   bool hasQualityChoices = true,
   bool transportHidden = false,
+  bool withEpisodes = false,
 }) {
   return PlayerControlsOverlay(
     player: surface ?? FakePlayerSurface(),
@@ -82,6 +84,7 @@ Widget _overlay({
     showQuality: true,
     visible: visible,
     transportHidden: transportHidden,
+    onEpisodes: withEpisodes ? () {} : null,
   );
 }
 
@@ -241,6 +244,52 @@ void main() {
   testWidgets('no second quality: quality button drops out', (tester) async {
     await pump(tester, _overlay(hasQualityChoices: false));
     expect(find.byIcon(Icons.high_quality_rounded), findsNothing);
+  });
+
+  testWidgets('episodes button shows only with the panel callback',
+      (tester) async {
+    await pump(tester, _overlay(withEpisodes: true));
+    expect(find.byIcon(Icons.video_library_outlined), findsOneWidget);
+  });
+
+  testWidgets('episodes panel: rows, current highlight, untitled label, select',
+      (tester) async {
+    var selected = -1;
+    await pump(
+      tester,
+      Align(
+        alignment: AlignmentDirectional.centerEnd,
+        child: ZmixEpisodesPanel(
+          episodes: const [
+            ZmixPanelEpisode(
+              number: 1,
+              title: 'الحلقة الأولى',
+              runtimeSeconds: 1320,
+            ),
+            ZmixPanelEpisode(number: 2, title: 'Episode 2 - المطاردة'),
+            ZmixPanelEpisode(number: 3, title: 'بلا عنوان'),
+            ZmixPanelEpisode(number: 4, title: 'الحلقة الرابعة'),
+            ZmixPanelEpisode(number: 5, title: 'الحلقة الخامسة'),
+          ],
+          currentIndex: 1,
+          onSelect: (i) => selected = i,
+        ),
+      ),
+    );
+    expect(find.text('الحلقات'), findsOneWidget);
+    expect(find.text('E1'), findsOneWidget);
+    expect(find.text('E3'), findsOneWidget);
+    expect(find.text('بلا عنوان'), findsOneWidget);
+    // The generic "Episode 2 - " prefix is stripped on display.
+    expect(find.text('المطاردة'), findsOneWidget);
+    expect(find.text('22 د'), findsOneWidget); // 1320s -> 22m
+    expect(find.text('يُعرض الآن'), findsOneWidget); // current row
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/player_episodes_panel.png'),
+    );
+    await tester.tap(find.text('الحلقة الرابعة'));
+    expect(selected, 3);
   });
 
   testWidgets(

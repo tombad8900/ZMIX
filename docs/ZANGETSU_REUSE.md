@@ -14,7 +14,8 @@ diffs (upstream file vs ZMIX file) in `docs/diffs/` for every
 upstream-derived file that is WIRED INTO THE APK:
 `poster_card.diff`, `player_controls_overlay.diff`, `player_seek_bar.diff`,
 `player_controls_widgets.diff`, `player_controls_config.diff`,
-`app_text.diff`, `app_colors.diff`, `frosted_surface.diff`.
+`app_text.diff`, `app_colors.diff`, `frosted_surface.diff`,
+`player_episodes_panel.diff`.
 
 ## Cards: lib/ui/poster_card.dart <- upstream lib/core/ui/poster_card.dart
 
@@ -58,7 +59,8 @@ layout.
 
 | ZMIX file (wired) | Upstream file | Edits |
 |---|---|---|
-| lib/player/player_controls_overlay.dart | features/player/player_controls_overlay.dart | PlayerCubit/PlayerState replaced by the `ZmixPlayerSurface` seam (`MediaKitPlayerSurface` in production, fakes in widget tests — a real media_kit Player needs native libmpv and cannot exist in a VM test); l10n lookups replaced by inline Arabic; episode facts arrive as plain fields; `transportHidden` flag added so ZMIX's centered double-tap seek pill never overlaps the center transport; `_fitIcon` maps ZMIX's Arabic fit labels; the 'more' spec returns null while its panel has no rows |
+| lib/player/player_controls_overlay.dart | features/player/player_controls_overlay.dart | PlayerCubit/PlayerState replaced by the `ZmixPlayerSurface` seam (`MediaKitPlayerSurface` in production, fakes in widget tests — a real media_kit Player needs native libmpv and cannot exist in a VM test); l10n lookups replaced by inline Arabic; episode facts arrive as plain fields; `transportHidden` flag added so ZMIX's centered double-tap seek pill never overlaps the center transport; `_fitIcon` maps ZMIX's Arabic fit labels; the 'episodes' spec renders a الحلقات button wired to the ported episodes panel; the 'more' spec returns null while its panel has no rows |
+| lib/player/player_episodes_panel.dart | features/player/player_episodes_panel.dart | literal port: same side-sheet layout, search box, per-row E-number/title/runtime, current-episode highlight with play glyph and the يُعرض الآن label; `Episode` replaced by a plain `ZmixPanelEpisode` (number/title/thumbnail/runtimeSeconds); seasons/Jikan filler omitted (a YouTube playlist is one flat list); inline Arabic; see `docs/diffs/player_episodes_panel.diff` |
 | lib/player/player_seek_bar.dart | features/player/player_seek_bar.dart | `part of` kept; scrub-preview bubble (SeekPreview storyboard frames) omitted — ZMIX has no storyboard source; the time bubble and all slider logic kept |
 | lib/player/player_controls_widgets.dart | features/player/player_controls_widgets.dart | `part of` kept; see above for `_fitIcon` |
 | lib/player/player_controls_config.dart | features/player/player_controls_config.dart | near-verbatim; unsupported ids fall through to null via upstream's own skip mechanism |
@@ -69,8 +71,8 @@ layout.
 Material upstream omissions (features ZMIX does not have; they take nullable
 callbacks / fall through upstream's null-skip rather than pretending):
 cast, decoder switch, enhance, colour profiles, snapshot, sleep timer, PiP,
-minimize, engine switch, ambient mode, room chat, info panel, episodes
-panel, sources, subtitle/audio tracks, MegaSkip pill, settings shortcut,
+minimize, engine switch, ambient mode, room chat, info panel,
+sources, subtitle/audio tracks, MegaSkip pill, settings shortcut,
 Jikan filler badge, scrub storyboard previews, the TV controls variant, and
 upstream's speed/sleep/settings sheets (ZMIX keeps its own speed cycling;
 rotate is dropped because ZMIX is landscape-locked). The 'more' overflow

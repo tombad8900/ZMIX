@@ -10,6 +10,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'models.dart';
 import 'player/player_controls_config.dart';
 import 'player/player_controls_overlay.dart';
+import 'player/player_episodes_panel.dart';
 import 'player_chrome.dart';
 import 'player_hud.dart';
 import 'storage.dart';
@@ -335,6 +336,36 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     }
   }
 
+  // ── Episodes panel (Zangetsu port, lib/player/player_episodes_panel.dart)
+
+  void _openEpisodesPanel() {
+    final siblings = widget.siblings;
+    if (siblings == null || siblings.length < 2) return;
+    showZmixEpisodesPanel(
+      context,
+      episodes: [
+        for (var i = 0; i < siblings.length; i++)
+          ZmixPanelEpisode(
+            number: i + 1,
+            // Untitled (source-hidden) entries keep the library's neutral
+            // label: no title is not evidence of unavailability.
+            title: siblings[i].isSourceUntitled ? 'بلا عنوان' : siblings[i].title,
+            thumbnail: siblings[i].thumbUrl.isNotEmpty
+                ? siblings[i].thumbUrl
+                : null,
+            runtimeSeconds: siblings[i].durationSeconds,
+          ),
+      ],
+      currentIndex: _index,
+      onSelect: (i) {
+        Navigator.of(context).pop();
+        if (i != _index) _goToSibling(i - _index);
+        _bumpControls();
+      },
+    );
+    _scheduleHide();
+  }
+
   // ── Previous / next in playlist ────────────────────────────────────────
 
   Future<void> _goToSibling(int delta) async {
@@ -560,6 +591,9 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
                   onSpeed: _cycleSpeed,
                   onQuality: _qualities.length > 1 ? _openQualitySheet : null,
                   onLock: _toggleLock,
+                  // The episodes panel: switch videos without leaving the
+                  // player. Single videos get no button (upstream's rule).
+                  onEpisodes: multiEpisode ? _openEpisodesPanel : null,
                   // ZMIX is landscape-locked (see initState): the
                   // portrait/landscape flip does not apply, so upstream's
                   // own null-skip drops the rotate button.
