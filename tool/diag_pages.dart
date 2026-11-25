@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 /// how many our parser accepts, duplicates, and the continuation chain.
 Future<void> main() async {
   const playlistId = 'PL00000000000000000000000000000000';
+  const extraParams = bool.hasEnvironment('PARAMS') ? String.fromEnvironment('PARAMS') : 'wgYCCAA=';
   final client = http.Client();
   final url = Uri.https(
       'www.youtube.com', '/youtubei/v1/browse', {'prettyPrint': 'false'});
@@ -32,6 +33,7 @@ Future<void> main() async {
     final resp = await client
         .post(url, headers: headers, body: jsonEncode(body))
         .timeout(const Duration(seconds: 20));
+    if (page == 1) stdout.writeln('params in use: $extraParams');
     stdout.writeln('--- page $page: HTTP ${resp.statusCode}, '
         '${resp.bodyBytes.length} bytes');
     if (resp.statusCode != 200) break;

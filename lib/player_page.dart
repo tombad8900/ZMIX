@@ -6,6 +6,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
+import 'player_chrome.dart';
+
 /// ZMIX custom player. Design language adapted from Zangetsu (GPL-3.0):
 /// auto-hiding overlay, double-tap seek, long-press speed boost,
 /// vertical brightness/volume swipes with a HUD, horizontal scrub.
@@ -209,14 +211,8 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
 
   // ── UI ─────────────────────────────────────────────────────────────────
 
-  String _fmt(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes % 60;
-    final s = d.inSeconds % 60;
-    String two(int v) => v.toString().padLeft(2, '0');
-    return h > 0 ? '$h:${two(m)}:${two(s)}' : '$m:${two(s)}';
-  }
 
+  @override
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -226,16 +222,67 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         children: [
           Center(child: Video(controller: _controller, controls: NoVideoControls)),
           _gestureLayer(),
-          if (_seekDelta != 0) _seekIndicator(),
-          if (_hudVisible) _hud(),
-          if (_boosting) _boostBadge(),
-          if (_controlsVisible) _topBar(),
-          if (_controlsVisible) _bottomBar(),
-          if (_error != null) _errorBanner(),
+          StreamBuilder<Duration>(
+            stream: _player.stream.position,
+            initialData: _player.state.position,
+            builder: (context, posSnap) {
+              return StreamBuilder<bool>(
+                stream: _player.stream.playing,
+                initialData: _player.state.playing,
+                builder: (context, playSnap) {
+                  return PlayerChrome(
+                    title: widget.title,
+                    qualityLabel: widget.qualityLabel,
+                    position: _scrubbing
+                        ? _scrubPosition
+                        : (posSnap.data ?? Duration.zero),
+                    duration: _player.state.duration,
+                    playing: playSnap.data ?? false,
+                    rate: _rate,
+                    controlsVisible: _controlsVisible,
+                    seekDelta: _seekDelta,
+                    seekForward: _seekForward,
+                    hudVisible: _hudVisible,
+                    hudIsBrightness: _hudIsBrightness,
+                    hudValue: _hudValue,
+                    boosting: _boosting,
+                    errorText: _error,
+                    onBack: () => Navigator.of(context).pop(),
+                    onPlayPause: () {
+                      _player.playOrPause();
+                      _scheduleHide();
+                    },
+                    onCycleSpeed: _cycleSpeed,
+                    onScrubChanged: (v) {
+                      _hideTimer?.cancel();
+                      setState(() {
+                        _scrubbing = true;
+                        _scrubPosition = Duration(
+                          milliseconds:
+                              (v * _player.state.duration.inMilliseconds)
+                                  .round(),
+                        );
+                      });
+                    },
+                    onScrubEnd: (v) {
+                      final target = Duration(
+                        milliseconds:
+                            (v * _player.state.duration.inMilliseconds).round(),
+                      );
+                      setState(() => _scrubbing = false);
+                      _player.seek(target);
+                      _scheduleHide();
+                    },
+                  );
+                },
+              );
+            },
+          ),
         ],
       ),
     );
   }
+
 
   Widget _gestureLayer() {
     return Row(
@@ -263,232 +310,4 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _seekIndicator() {
-    return Center(
-      child: AnimatedOpacity(
-        opacity: 1,
-        duration: const Duration(milliseconds: 150),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.65),
-            borderRadius: BorderRadius.circular(30),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _seekForward ? Icons.fast_forward_rounded : Icons.fast_rewind_rounded,
-                color: Colors.white,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${_seekDelta.abs()} ث',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _hud() {
-    return Center(
-      child: Container(
-        width: 150,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.7),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              _hudIsBrightness ? Icons.wb_sunny_outlined : Icons.volume_up_rounded,
-              size: 22,
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: _hudValue,
-                minHeight: 5,
-                backgroundColor: Colors.white24,
-                valueColor: const AlwaysStoppedAnimation(Color(0xFF7C6CFF)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _boostBadge() {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: Container(
-        margin: const EdgeInsets.only(top: 52),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFF7C6CFF).withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Text('2×', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-      ),
-    );
-  }
-
-  Widget _topBar() {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.black.withValues(alpha: 0.7), Colors.transparent],
-          ),
-        ),
-        padding: const EdgeInsets.fromLTRB(4, 4, 4, 24),
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back_rounded),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            Expanded(
-              child: Text(
-                widget.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
-              ),
-            ),
-            if (widget.qualityLabel != null)
-              Padding(
-                padding: const EdgeInsetsDirectional.only(end: 12),
-                child: Text(
-                  widget.qualityLabel!,
-                  style: const TextStyle(fontSize: 12, color: Color(0xFFC9C9D4)),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _bottomBar() {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [Colors.black.withValues(alpha: 0.75), Colors.transparent],
-          ),
-        ),
-        padding: const EdgeInsets.fromLTRB(12, 24, 12, 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            StreamBuilder<Duration>(
-              stream: _player.stream.position,
-              initialData: _player.state.position,
-              builder: (context, snap) {
-                final position = _scrubbing ? _scrubPosition : (snap.data ?? Duration.zero);
-                final duration = _player.state.duration;
-                return Row(
-                  children: [
-                    Text(_fmt(position), style: const TextStyle(fontSize: 12)),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 3,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                        ),
-                        child: Slider(
-                          value: duration > Duration.zero
-                              ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
-                              : 0,
-                          onChanged: (v) {
-                            _hideTimer?.cancel();
-                            setState(() {
-                              _scrubbing = true;
-                              _scrubPosition = Duration(
-                                milliseconds: (v * duration.inMilliseconds).round(),
-                              );
-                            });
-                          },
-                          onChangeEnd: (v) {
-                            final target = Duration(
-                              milliseconds: (v * duration.inMilliseconds).round(),
-                            );
-                            setState(() => _scrubbing = false);
-                            _player.seek(target);
-                            _scheduleHide();
-                          },
-                        ),
-                      ),
-                    ),
-                    Text(_fmt(duration), style: const TextStyle(fontSize: 12)),
-                  ],
-                );
-              },
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                StreamBuilder<bool>(
-                  stream: _player.stream.playing,
-                  initialData: _player.state.playing,
-                  builder: (context, snap) => IconButton(
-                    iconSize: 40,
-                    icon: Icon(
-                      (snap.data ?? false) ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    ),
-                    onPressed: () {
-                      _player.playOrPause();
-                      _scheduleHide();
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                TextButton(
-                  onPressed: _cycleSpeed,
-                  child: Text(
-                    '${_rate}x',
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _errorBanner() {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.red.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(
-          'حصل خطأ في التشغيل: $_error',
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.redAccent, fontSize: 13),
-        ),
-      ),
-    );
-  }
 }

@@ -40,7 +40,6 @@ Future<void> main() async {
     final name = entry.key;
     try {
       final ids = <String>{};
-      var total = 0;
       Map<String, dynamic> body = {
         'context': entry.value,
         'browseId': 'VL$playlistId'
@@ -63,7 +62,6 @@ Future<void> main() async {
         for (final id in idsThisPage) {
           if (ids.add(id)) newOnes++;
         }
-        total += idsThisPage.length;
         final tokens = <String>[];
         findTokens(decoded, tokens);
         if (tokens.isEmpty || newOnes == 0) {

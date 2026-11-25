@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:palette_generator/palette_generator.dart';
 
+import 'grouper.dart';
 import 'models.dart';
 import 'player_page.dart';
 import 'storage.dart';
@@ -174,10 +175,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
             ),
           ),
           SliverList.separated(
-            itemCount: playlist.videos.length,
+            itemCount: _rows.length,
             separatorBuilder: (_, __) => const SizedBox(height: 4),
             itemBuilder: (context, i) {
-              final video = playlist.videos[i];
+              final row = _rows[i];
+              if (row.header != null) return _headerTile(row.header!);
+              if (row.subheader != null) return _subheaderTile(row.subheader!);
+              final video = row.video!;
               final resolving = _resolvingId == video.id;
               return ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -245,4 +249,64 @@ class _PlaylistPageState extends State<PlaylistPage> {
       ),
     );
   }
+
+  List<_Row> get _rows => _rowsCache ??= _buildRows();
+  List<_Row>? _rowsCache;
+
+  /// Clear-title series get sections; everything else keeps its flat order.
+  List<_Row> _buildRows() {
+    final g = groupPlaylist(widget.playlist.videos);
+    if (g.series.isEmpty) {
+      return [for (final v in widget.playlist.videos) _Row.video(v)];
+    }
+    final rows = <_Row>[];
+    for (final s in g.series) {
+      rows.add(_Row.header('${s.title} · ${s.totalEpisodes} حلقة'));
+      final multiSeason = s.sortedSeasons.where((x) => x != null).length > 1;
+      for (final season in s.sortedSeasons) {
+        if (multiSeason && season != null) {
+          rows.add(_Row.subheader('موسم $season'));
+        }
+        for (final v in s.seasons[season]!) {
+          rows.add(_Row.video(v));
+        }
+      }
+    }
+    if (g.ungrouped.isNotEmpty) {
+      rows.add(_Row.header('فيديوهات · ${g.ungrouped.length}'));
+      for (final v in g.ungrouped) {
+        rows.add(_Row.video(v));
+      }
+    }
+    return rows;
+  }
+
+  Widget _headerTile(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 14.5,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF9E97FF),
+          ),
+        ),
+      );
+
+  Widget _subheaderTile(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 10, 24, 2),
+        child: Text(
+          text,
+          style: const TextStyle(fontSize: 12.5, color: Color(0xFFC9C9D4)),
+        ),
+      );
+}
+
+class _Row {
+  _Row.video(this.video) : header = null, subheader = null;
+  _Row.header(this.header) : video = null, subheader = null;
+  _Row.subheader(this.subheader) : video = null, header = null;
+  final LibraryVideo? video;
+  final String? header;
+  final String? subheader;
 }
