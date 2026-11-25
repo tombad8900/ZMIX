@@ -1,8 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import 'main.dart';
 import 'models.dart';
+import 'play_launcher.dart';
+import 'ui/poster_card.dart';
 import 'playlist_page.dart';
 import 'storage.dart';
 import 'youtube_service.dart';
@@ -34,7 +35,7 @@ class _LibraryPageState extends State<LibraryPage> {
     final added = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF14141B),
+      backgroundColor: const Color(0xFF16161C),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -69,7 +70,7 @@ class _LibraryPageState extends State<LibraryPage> {
                               fontSize: 30,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 2.5,
-                              color: Color(0xFFEDE9FF),
+                              color: Color(0xFFFFFFFF),
                             ),
                           ),
                           SizedBox(height: 2),
@@ -98,26 +99,20 @@ class _LibraryPageState extends State<LibraryPage> {
                 child: _EmptyShelf(onAdd: _openAddSheet),
               )
             else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    // Responsive: 2 columns on phones, more on wide screens,
-                    // and a card never grows taller than the viewport.
-                    maxCrossAxisExtent: 360,
-                    mainAxisSpacing: 14,
-                    crossAxisSpacing: 14,
-                    childAspectRatio: 0.78,
+              // Zangetsu home style: one section per playlist - header with
+              // name, count and chevron, then a horizontal shelf of the
+              // first videos as wide poster cards.
+              ...[
+                for (final playlist in store.playlists) ...[
+                  SliverToBoxAdapter(
+                    child: _SectionHeader(playlist: playlist, store: store),
                   ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) => _PlaylistCard(
-                      playlist: store.playlists[i],
-                      store: store,
-                    ),
-                    childCount: store.playlists.length,
+                  SliverToBoxAdapter(
+                    child: _VideoShelf(playlist: playlist, store: store),
                   ),
-                ),
-              ),
+                ],
+                const SliverToBoxAdapter(child: SizedBox(height: 28)),
+              ],
           ],
         ),
       ),
@@ -163,195 +158,6 @@ class _EmptyShelf extends StatelessWidget {
   }
 }
 
-class _PlaylistCard extends StatelessWidget {
-  const _PlaylistCard({required this.playlist, required this.store});
-
-  final LibraryPlaylist playlist;
-  final LibraryStore store;
-
-  Future<void> _onLongPress(BuildContext context) async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: const Color(0xFF14141B),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('تغيير الاسم'),
-              onTap: () => Navigator.pop(sheetContext, 'rename'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              title: const Text('حذف من المكتبة', style: TextStyle(color: Colors.redAccent)),
-              onTap: () => Navigator.pop(sheetContext, 'delete'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (!context.mounted) return;
-    if (action == 'delete') {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('حذف القائمة؟'),
-          content: const Text('القائمة هتتشال من المكتبة. سجل المشاهدة هيفضل زي ما هو.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('حذف'),
-            ),
-          ],
-        ),
-      );
-      if (ok == true) await store.removePlaylist(playlist.id);
-    } else if (action == 'rename') {
-      final controller = TextEditingController(text: playlist.name);
-      final newName = await showDialog<String>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('اسم القائمة'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(hintText: 'اكتب الاسم الجديد'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, controller.text),
-              child: const Text('حفظ'),
-            ),
-          ],
-        ),
-      );
-      if (newName != null) await store.renamePlaylist(playlist.id, newName);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onLongPress: () => _onLongPress(context),
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => PlaylistPage(playlist: playlist, store: store),
-          ),
-        );
-      },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Hero(
-              tag: 'pl_${playlist.id}',
-              child: playlist.thumbUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: playlist.thumbUrl,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => const _ArtFallback(),
-                      placeholder: (_, __) => const _ArtFallback(),
-                    )
-                  : const _ArtFallback(),
-            ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Color(0xB3000000), Color(0xE6000000)],
-                  stops: [0.45, 0.75, 1.0],
-                ),
-              ),
-            ),
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: 12,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    playlist.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w700,
-                      height: 1.35,
-                      shadows: [Shadow(blurRadius: 8, color: Colors.black)],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _countLabel(playlist),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: playlist.importComplete
-                          ? const Color(0xFFC9C9D4)
-                          : const Color(0xFFFFC36B),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-String _countLabel(LibraryPlaylist playlist) {
-  if (playlist.importComplete) return '${playlist.videos.length} فيديو';
-  final got = playlist.videos.length;
-  switch (playlist.importNote) {
-    case 'short_of_declared':
-      return '$got من ${playlist.totalCountHint} معلنة';
-    case 'cancelled':
-      return '$got فيديو - الاستيراد اتلغى';
-    case 'network':
-      return '$got فيديو - الاستيراد وقف في النص';
-    default:
-      return '$got فيديو - ناقصة';
-  }
-}
-
-class _ArtFallback extends StatelessWidget {
-  const _ArtFallback();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: [Color(0xFF3B2F8F), Color(0xFF1A1726)],
-        ),
-      ),
-      child: const Center(
-        child: Icon(Icons.play_circle_outline, size: 44, color: Color(0x55FFFFFF)),
-      ),
-    );
-  }
-}
-
-/// Bottom sheet: paste a YouTube playlist link, optional nickname, add.
 class AddPlaylistSheet extends StatefulWidget {
   const AddPlaylistSheet({super.key, required this.store});
 
@@ -463,7 +269,7 @@ class _AddPlaylistSheetState extends State<AddPlaylistSheet> {
               child: Text(
                 _status!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Color(0xFF9E97FF), fontSize: 13),
+                style: const TextStyle(color: Color(0xFFFF4D57), fontSize: 13),
               ),
             ),
           if (_error != null)
@@ -497,10 +303,104 @@ class _AddPlaylistSheetState extends State<AddPlaylistSheet> {
         hintText: hint,
         hintStyle: const TextStyle(color: Color(0xFF6E6E78), fontSize: 13.5),
         filled: true,
-        fillColor: const Color(0xFF0E0E13),
+        fillColor: const Color(0xFF0B0B0F),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
         ),
       );
+}
+
+/// Section header: playlist name, video count, chevron into the full grid.
+/// Mirrors Zangetsu's home row headers (title + chevron_right affordance).
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.playlist, required this.store});
+
+  final LibraryPlaylist playlist;
+  final LibraryStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PlaylistPage(playlist: playlist, store: store),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 8, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    playlist.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFFFFFFF),
+                    ),
+                  ),
+                  Text(
+                    '${playlist.videos.length} فيديو',
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFFA7A7B2)),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_left_rounded, color: Color(0xFFA7A7B2)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Horizontal shelf of the playlist's first videos as wide poster cards
+/// (Zangetsu wide shelf cell width: 184).
+class _VideoShelf extends StatelessWidget {
+  const _VideoShelf({required this.playlist, required this.store});
+
+  final LibraryPlaylist playlist;
+  final LibraryStore store;
+
+  static const int _maxCards = 12;
+
+  @override
+  Widget build(BuildContext context) {
+    final videos = playlist.videos.take(_maxCards).toList();
+    return SizedBox(
+      height: posterRowHeight(context),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: videos.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (context, i) {
+          final video = videos[i];
+          return SizedBox(
+            width: posterRowWidth(context),
+            child: PosterCard(
+              title: video.title,
+              imageUrl: video.thumbUrl.isEmpty ? null : video.thumbUrl,
+              tags: [
+                if (video.durationLabel.isNotEmpty) video.durationLabel,
+              ],
+              onTap: () => playLibraryVideo(
+                context,
+                store: store,
+                playlist: playlist,
+                video: video,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }

@@ -74,7 +74,7 @@ class SettingsPage extends StatelessWidget {
             leading: Icon(Icons.info_outline),
             title: Text('ZMIX'),
             subtitle: Text(
-              'نسخة $appVersion\nمكتبتك السينمائية لقوائم يوتيوب. بيانات المكتبة محفوظة على جهازك، وجلب القوائم والتشغيل بيتم من خلال يوتيوب.\nالشكل مستوحى من Zangetsu وCloudstream، والكود مفتوح المصدر تحت GPL-3.0.',
+              'نسخة $appVersion\nمكتبتك السينمائية لقوائم يوتيوب. بيانات المكتبة محفوظة على جهازك، وجلب القوائم والتشغيل بيتم من خلال يوتيوب.\nواجهة المشغّل وبطاقات المحتوى معدّلة من كود مشروع Zangetsu (GPL-3.0)، وفكرة تشغيل يوتيوب من Cloudstream (GPL-3.0). كود ZMIX مفتوح المصدر تحت GPL-3.0 مع الحفاظ على إشعارات حقوقهم.',
               style: TextStyle(height: 1.7),
             ),
           ),

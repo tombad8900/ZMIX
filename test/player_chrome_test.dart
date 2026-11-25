@@ -58,8 +58,30 @@ void main() {
     tester.view.physicalSize = surface;
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.reset);
+    // Render the chrome over a stand-in for video artwork (bright, busy
+    // gradient) instead of a black frame: Zangetsu's scrims were designed
+    // over real poster art, so legibility must be judged over that.
     await tester.pumpWidget(
-      goldenHost(Scaffold(backgroundColor: Colors.black, body: chrome)),
+      goldenHost(
+        Scaffold(
+          body: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                stops: [0.0, 0.45, 0.7, 1.0],
+                colors: [
+                  Color(0xFF3A5DA8),
+                  Color(0xFFD9D2C4),
+                  Color(0xFF8C3A2F),
+                  Color(0xFF1B2B1E),
+                ],
+              ),
+            ),
+            child: chrome,
+          ),
+        ),
+      ),
     );
     await tester.pump(const Duration(milliseconds: 100));
   }

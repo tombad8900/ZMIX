@@ -37,11 +37,11 @@ Widget goldenHost(Widget child) {
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: const Color(0xFF0E0E13),
+      scaffoldBackgroundColor: const Color(0xFF0B0B0F),
       colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF7C6CFF),
+        seedColor: const Color(0xFFFF4D57),
         brightness: Brightness.dark,
-        surface: const Color(0xFF14141B),
+        surface: const Color(0xFF16161C),
       ),
       useMaterial3: true,
       fontFamily: 'Naskh',

@@ -56,12 +56,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   Timer? _hideTimer;
   String? _error;
 
-  // Fit modes, same trio as Zangetsu's _fits: Fit / Fill / Stretch.
-  static const List<(BoxFit, String)> _fits = [
-    (BoxFit.contain, 'ملاءمة'),
-    (BoxFit.cover, 'توسيع'),
-    (BoxFit.fill, 'تمديد'),
-  ];
+  // Fit trio lives in player_chrome.dart (kPlayerFits).
   int _fitIndex = 0;
 
   bool _locked = false;
@@ -167,7 +162,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   }
 
   void _cycleFit() {
-    setState(() => _fitIndex = (_fitIndex + 1) % _fits.length);
+    setState(() => _fitIndex = nextFitIndex(_fitIndex));
     _scheduleHide();
   }
 
@@ -182,30 +177,14 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(14),
-                child: Text('جودة التشغيل',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              ),
-              for (final q in _qualities)
-                ListTile(
-                  title: Text(q.quality),
-                  trailing: q.quality == _currentQuality
-                      ? const Icon(Icons.check_rounded,
-                          color: PlayerChrome.accent)
-                      : null,
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    _switchQuality(q);
-                  },
-                ),
-            ],
-          ),
+        return QualityListSheet(
+          qualities: [for (final q in _qualities) q.quality],
+          activeQuality: _currentQuality ?? '',
+          onPick: (label) {
+            final q = _qualities.firstWhere((q) => q.quality == label);
+            Navigator.of(sheetContext).pop();
+            _switchQuality(q);
+          },
         );
       },
     );
@@ -394,7 +373,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
             child: Video(
               controller: _controller,
               controls: NoVideoControls,
-              fit: _fits[_fitIndex].$1,
+              fit: kPlayerFits[_fitIndex].$1,
             ),
           ),
           if (!_locked) _gestureLayer(),
@@ -422,7 +401,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
                         rate: _rate,
                         controlsVisible: _controlsVisible,
                         locked: _locked,
-                        fitLabel: _fits[_fitIndex].$2,
+                        fitLabel: kPlayerFits[_fitIndex].$2,
                         hasPrev: hasPrev,
                         hasNext: hasNext,
                         seekDelta: _seekDelta,
