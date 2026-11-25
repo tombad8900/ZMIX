@@ -35,6 +35,7 @@ PlayerChrome _chrome({
     boosting: boosting,
     errorText: errorText,
     onBack: () {},
+    onRetry: () {},
     onPlayPause: () {},
     onPrev: () {},
     onNext: () {},
@@ -129,6 +130,25 @@ void main() {
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/player_chrome_error.png'),
+    );
+  });
+
+  testWidgets('player chrome error panel on a dark frame', (tester) async {
+    tester.view.physicalSize = surface;
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      goldenHost(
+        Scaffold(
+          backgroundColor: Colors.black,
+          body: _chrome(errorText: 'تعذر حل رابط التشغيل'),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/player_chrome_error_dark.png'),
     );
   });
 
