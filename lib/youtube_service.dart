@@ -1,8 +1,16 @@
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import 'js_solver/player_js_solver.dart';
 import 'models.dart';
 import 'playlist_fetcher.dart';
 import 'subtitles.dart';
+
+/// EXPERIMENTAL GATE, kept OFF in delivered builds (main 5:03:57: solver
+/// initialized is not solver proven). When false, every construction path
+/// stays solver-less (0.3.5 behavior). Flipping this constant is the ONLY
+/// change needed to exercise the PlayerJsSolver end-to-end on a device, and
+/// must not happen without main's approval of the verification path.
+const kSolverExperimentEnabled = false;
 
 /// One quality row in the picker's list.
 class ZmixQualityOption {
@@ -57,6 +65,16 @@ class ZmixCaptionTrack {
 /// Thin wrapper over youtube_explode_dart for the library flows.
 class YoutubeService {
   YoutubeService() : _yt = YoutubeExplode();
+
+  /// Experimental path: attaches the offline-validated PlayerJsSolver so
+  /// youtube_explode deciphers n/signature params on adaptive streams.
+  /// Only reachable when kSolverExperimentEnabled is true.
+  factory YoutubeService.experimental(PlayerJsSolver solver) {
+    assert(kSolverExperimentEnabled);
+    return YoutubeService._(YoutubeExplode(jsSolver: solver));
+  }
+
+  YoutubeService._(this._yt);
 
   final YoutubeExplode _yt;
 
