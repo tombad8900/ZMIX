@@ -51,3 +51,24 @@ NewPipe's plain-eval approach instead.
   fetch or a device run (gated on project-owner approval).
 - Whether deciphered adaptive URLs then play on the user's network:
   device test only.
+
+## Update 2026-11-25: current player b485e332 (bounded live check, main-approved)
+
+Two public requests only (iframe_api discovery + one base.js GET), no
+playback/account/manifest requests, no throttling observed.
+
+- Player b485e332 (3.08 MB, sts 20779) evals in 280 ms on QuickJS
+  2021-03-27; the URL-class helper solves n-challenges deterministically
+  (~1 ms), byte-identical to V8 (engine parity).
+- Literal NewPipe dev HEAD (ebc0b8c, 2026-11-23) extraction FAILS on this
+  player: its `\w*` captures `o` instead of `$o` ($ is not in \w). The
+  solver's `[\w$]` widening is required and documented in
+  player_js_solver.dart (ZMIX-EDIT).
+- Output correctness is STRUCTURALLY validated only (deterministic,
+  engine-identical, invoked via the player's own URL class); no committed
+  ground-truth vectors exist for b485e332, and ejs 0.8.0 fails on it even
+  on V8 (addOnDisposeCallback shim gap).
+- SIGNATURE: all six NewPipe sig call-site regexes fail on b485e332;
+  regex-based sig deciphering is not available for this player generation.
+  Integration impact depends on whether the manifest clients in use return
+  signatureCipher-gated streams (unverified offline).
