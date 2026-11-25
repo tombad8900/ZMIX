@@ -93,8 +93,12 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   // The URL currently loaded in the player (stream or chosen quality).
   late String _currentUrl;
 
-  // Available muxed qualities (best first), fetched after open.
-  List<({String url, String quality})> _qualities = [];
+  // Available qualities (best first), fetched after open: muxed streams
+  // plus adaptive video-only ones played with _audioUrl as mpv's external
+  // audio track (YouTube caps muxed at 360p for most videos).
+  List<ZmixQualityOption> _qualities = [];
+  String? _audioUrl;
+  bool _currentNeedsAudio = false;
 
   // Subtitles (YouTube caption tracks -> SRT -> media_kit external track).
   List<ZmixCaptionTrack> _captions = [];
@@ -159,8 +163,13 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     if (id == null || kIsWeb) return;
     final service = YoutubeService();
     try {
-      final list = await service.resolvePlayableList(id);
-      if (mounted) setState(() => _qualities = list);
+      final choices = await service.resolveStreamChoices(id);
+      if (mounted) {
+        setState(() {
+          _qualities = choices.qualities;
+          _audioUrl = choices.audioUrl;
+        });
+      }
     } catch (_) {
       // Quality picker stays hidden; playback continues on the opened stream.
     } finally {
@@ -297,9 +306,23 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   /// Retry after a playback error: reopen the current stream from scratch.
   void _retry() {
     setState(() => _error = null);
-    _player.open(Media(_currentUrl), play: true).then((_) => _reapplyCaption());
+    _player.open(Media(_currentUrl), play: true).then((_) async {
+      await _reapplyAudio();
+      await _reapplyCaption();
+    });
     _loadQualities();
     _scheduleHide();
+  }
+
+  /// Re-attaches the external audio track when the current URL is a
+  /// video-only adaptive stream; detaches it for muxed (audio built in).
+  Future<void> _reapplyAudio() async {
+    final audio = _audioUrl;
+    if (_currentNeedsAudio && audio != null) {
+      await _player.setAudioTrack(AudioTrack.uri(audio));
+    } else {
+      await _player.setAudioTrack(AudioTrack.auto());
+    }
   }
 
   // ── Quality ────────────────────────────────────────────────────────────
@@ -326,16 +349,18 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     );
   }
 
-  Future<void> _switchQuality(({String url, String quality}) q) async {
+  Future<void> _switchQuality(ZmixQualityOption q) async {
     if (q.quality == _currentQuality) return;
     final resume = _player.state.position;
     final wasPlaying = _player.state.playing;
     setState(() {
       _currentQuality = q.quality;
       _error = null;
+      _currentNeedsAudio = q.videoOnly;
     });
     _currentUrl = q.url;
     await _player.open(Media(q.url), play: wasPlaying);
+    await _reapplyAudio();
     await _reapplyCaption();
     if (resume > Duration.zero) {
       // Seek only once the new stream knows its duration.
@@ -507,6 +532,8 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         _currentQuality = stream.quality;
         _error = null;
         _qualities = [];
+        _audioUrl = null;
+        _currentNeedsAudio = false;
         _captions = [];
         _activeCaption = null;
         _activeCaptionSrt = null;
@@ -605,8 +632,8 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     _scheduleHide();
   }
 
-  Future<void> _startVerticalDrag(DragStartDetails details) async {
-    final isLeft = details.localPosition.dx < MediaQuery.of(context).size.width / 2;
+  Future<void> _startVerticalDrag(DragStartDetails details,
+      {required bool isLeft}) async {
     double value = 0.5;
     if (isLeft) {
       try {
@@ -774,7 +801,10 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       onHorizontalDragStart: _startScrub,
       onHorizontalDragUpdate: _updateScrub,
       onHorizontalDragEnd: _endScrub,
-      onVerticalDragStart: _startVerticalDrag,
+      // ZMIX bugfix (0.3.2 device report): localPosition is relative to
+      // this half of the gesture Row, so the old width/2 check always
+      // landed on brightness; the half must come from the closure.
+      onVerticalDragStart: (d) => _startVerticalDrag(d, isLeft: isLeft),
       onVerticalDragUpdate: _updateVerticalDrag,
       onVerticalDragEnd: _endVerticalDrag,
       child: const SizedBox.expand(),

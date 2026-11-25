@@ -4,6 +4,36 @@ import 'models.dart';
 import 'playlist_fetcher.dart';
 import 'subtitles.dart';
 
+/// One quality row in the picker's list.
+class ZmixQualityOption {
+  const ZmixQualityOption({
+    required this.url,
+    required this.quality,
+    required this.videoOnly,
+    required this.height,
+    required this.bitrate,
+    required this.codec,
+  });
+
+  final String url;
+
+  /// Display label ('360p', '720p', ...).
+  final String quality;
+
+  /// True = needs the external audio track (adaptive split stream).
+  final bool videoOnly;
+  final int height;
+  final int bitrate;
+
+  /// Codec string kept for selection ranking, not shown.
+  final String codec;
+}
+
+typedef ZmixStreamChoices = ({
+  List<ZmixQualityOption> qualities,
+  String? audioUrl,
+});
+
 /// One subtitle language a video offers, deduplicated to a single track.
 class ZmixCaptionTrack {
   const ZmixCaptionTrack({
@@ -112,6 +142,93 @@ class YoutubeService {
       for (final s in streams)
         (url: s.url.toString(), quality: _qualityLabel(s.videoQuality.name)),
     ];
+  }
+
+  /// Every quality the player can offer: muxed streams (audio built in)
+  /// plus adaptive video-only streams (played with the audio track from
+  /// [ZmixStreamChoices.audioUrl] via mpv's external-audio support).
+  /// YouTube caps muxed at 360p for most videos, so everything above that
+  /// arrives video-only.
+  Future<ZmixStreamChoices> resolveStreamChoices(String videoId) async {
+    final manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
+    if (manifest.muxed.isEmpty && manifest.videoOnly.isEmpty) {
+      throw const FormatException('مفيش صيغة تشغيل متاحة للفيديو ده');
+    }
+    return (
+      qualities: buildQualityChoices(
+        muxed: [
+          for (final s in manifest.muxed)
+            (
+              url: s.url.toString(),
+              height: s.videoResolution.height,
+              bitrate: s.bitrate.bitsPerSecond,
+              codec: s.videoCodec,
+            ),
+        ],
+        videoOnly: [
+          for (final s in manifest.videoOnly)
+            (
+              url: s.url.toString(),
+              height: s.videoResolution.height,
+              bitrate: s.bitrate.bitsPerSecond,
+              codec: s.videoCodec,
+            ),
+        ],
+      ),
+      audioUrl: pickAudioUrl([
+        for (final s in manifest.audioOnly)
+          (
+            url: s.url.toString(),
+            bitrate: s.bitrate.bitsPerSecond,
+            mime: s.codec.mimeType,
+          ),
+      ]),
+    );
+  }
+
+  /// Pure: merges muxed and adaptive entries into the picker's list, one
+  /// entry per resolution height, best first. Per height: a muxed stream
+  /// wins (no external audio needed); among video-only candidates avc1 wins
+  /// (hardware-decodable on phones), then higher bitrate.
+  static List<ZmixQualityOption> buildQualityChoices({
+    required List<({String url, int height, int bitrate, String codec})> muxed,
+    required List<({String url, int height, int bitrate, String codec})> videoOnly,
+  }) {
+    final byHeight = <int, ZmixQualityOption>{};
+    int codecRank(String codec) => codec.startsWith('avc1') ? 0 : 1;
+    for (final s in [...muxed.map((m) => (s: m, videoOnly: false)), ...videoOnly.map((v) => (s: v, videoOnly: true))]) {
+      final candidate = ZmixQualityOption(
+        url: s.s.url,
+        quality: '${s.s.height}p',
+        videoOnly: s.videoOnly,
+        height: s.s.height,
+        bitrate: s.s.bitrate,
+        codec: s.s.codec,
+      );
+      final existing = byHeight[s.s.height];
+      if (existing == null ||
+          (existing.videoOnly && !candidate.videoOnly) ||
+          (existing.videoOnly == candidate.videoOnly &&
+              (codecRank(candidate.codec) < codecRank(existing.codec) ||
+                  (codecRank(candidate.codec) == codecRank(existing.codec) &&
+                      candidate.bitrate > existing.bitrate)))) {
+        byHeight[s.s.height] = candidate;
+      }
+    }
+    final out = byHeight.values.toList()
+      ..sort((a, b) => b.height.compareTo(a.height));
+    return out;
+  }
+
+  /// Pure: picks the audio track for adaptive playback — highest-bitrate
+  /// mp4 (m4a) when present, else highest bitrate overall.
+  static String? pickAudioUrl(
+      List<({String url, int bitrate, String mime})> audioOnly) {
+    if (audioOnly.isEmpty) return null;
+    final sorted = [...audioOnly]
+      ..sort((a, b) => b.bitrate.compareTo(a.bitrate));
+    final mp4 = sorted.where((a) => a.mime.startsWith('audio/mp4'));
+    return (mp4.isNotEmpty ? mp4.first : sorted.first).url;
   }
 
   Future<({String url, String quality})> resolvePlayable(String videoId) async {
