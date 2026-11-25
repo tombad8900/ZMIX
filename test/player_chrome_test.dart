@@ -3,15 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:zmix/player_chrome.dart';
 
-Widget _chromeHost({required Widget child}) {
-  return MaterialApp(
-    debugShowCheckedModeBanner: false,
-    home: Scaffold(
-      backgroundColor: const Color(0xFF101018),
-      body: Center(child: child),
-    ),
-  );
-}
+import 'golden_fonts.dart';
 
 PlayerChrome _chrome({
   int seekDelta = 0,
@@ -44,14 +36,19 @@ PlayerChrome _chrome({
 }
 
 void main() {
-  // 844x390: landscape phone surface (physical px of a 390-wide portrait phone).
-  const surface = Size(844, 390);
+  setUpAll(loadGoldenFonts);
+
+  // Logical 844x390 landscape phone surface; physicalSize is in physical
+  // pixels, so double it at devicePixelRatio 2.
+  const surface = Size(1688, 780);
 
   Future<void> pump(WidgetTester tester, PlayerChrome chrome) async {
     tester.view.physicalSize = surface;
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(_chromeHost(child: chrome));
+    await tester.pumpWidget(
+      goldenHost(Scaffold(backgroundColor: Colors.black, body: chrome)),
+    );
     await tester.pump(const Duration(milliseconds: 100));
   }
 
@@ -76,7 +73,7 @@ void main() {
     );
   });
 
-  testWidgets('player chrome error banner', (tester) async {
+  testWidgets('player chrome error banner above bottom controls', (tester) async {
     await pump(tester, _chrome(errorText: 'تعذر حل رابط التشغيل'));
     await expectLater(
       find.byType(MaterialApp),

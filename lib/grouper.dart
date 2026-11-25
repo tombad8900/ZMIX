@@ -124,8 +124,8 @@ EpisodeInfo? classifyTitle(String title) {
 
   final prefix = t.substring(0, match.start);
   final seriesTitle = prefix
-      .replaceAll(RegExp(r'[-–—|:،\(\)\[\].]+$'), '')
       .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceAll(RegExp(r'[-–—|:،\(\)\[\]. ]+$'), '')
       .trim();
   if (seriesTitle.length < 2) return null; // no usable series name
 

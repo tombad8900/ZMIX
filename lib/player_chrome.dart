@@ -100,7 +100,8 @@ class PlayerChrome extends StatelessWidget {
   }
 
   Widget _hud() {
-    return Center(
+    return Align(
+      alignment: const Alignment(0, -0.35),
       child: Container(
         width: 150,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -261,7 +262,7 @@ class PlayerChrome extends StatelessWidget {
     return Align(
       alignment: Alignment.bottomCenter,
       child: Container(
-        margin: const EdgeInsets.all(16),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 104),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.red.shade900.withValues(alpha: 0.9),
