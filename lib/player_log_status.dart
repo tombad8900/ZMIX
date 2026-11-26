@@ -33,7 +33,9 @@ class PlayerLogStatus {
   /// built ONLY from fixed words and a 3-digit code found in the line.
   static PlayerLogStatus? classify(String prefix, String level, String text) {
     if (level != 'error' && level != 'fatal') return null;
-    final t = text.toLowerCase();
+    // Drop URL-looking tokens first: a status phrase inside a query string is
+    // attacker/site-controlled text, not an mpv status.
+    final t = text.replaceAll(RegExp(r'\S+://\S*'), ' ').toLowerCase();
     final m = RegExp(r'http error (\d{3})').firstMatch(t);
     if (m != null) return PlayerLogStatus('http_status', int.parse(m.group(1)!));
     if (t.contains('can not open external file')) {

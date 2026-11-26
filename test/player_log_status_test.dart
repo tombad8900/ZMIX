@@ -47,4 +47,11 @@ void main() {
       expect(l.contains('example.invalid'), isFalse);
     }
   });
+
+  test('a status phrase inside a URL is not read as a status', () {
+    final s = PlayerLogStatus.classify('ffmpeg', 'error',
+        'Failed to open https://h.example.invalid/x?a=HTTP%20error%20403&b=http error 500');
+    expect(s!.kind, 'open_failed');
+    expect(s.httpStatus, isNull);
+  });
 }
