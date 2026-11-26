@@ -47,13 +47,20 @@ class IgnoreStaleError implements SwitchDecision {
   const IgnoreStaleError();
 }
 
-/// Stable identity of a stream URL that survives re-encoding and ignores
-/// per-request noise: itag + id + mime when present, else the whole string.
+/// Identity of a stream URL: itag + id + mime when ALL of itag and id are
+/// present (percent-encoding is normalized by the query parser), else the
+/// whole string, which can only match itself. Two URLs of the same
+/// itag/id/mime (a re-extraction with a new signature or expiry) share a
+/// key on purpose: if they collide, an error is attributed to the CURRENT
+/// open and handled as before, so a collision can never hide a current
+/// failure. It can only fail to ignore a stale one.
 String streamKey(String url) {
   final u = Uri.tryParse(url);
   final q = u?.queryParameters ?? const <String, String>{};
-  if (q['itag'] == null) return url;
-  return '${q['itag']}|${q['id'] ?? ''}|${q['mime'] ?? ''}';
+  final itag = q['itag'];
+  final id = q['id'];
+  if (itag == null || itag.isEmpty || id == null || id.isEmpty) return url;
+  return '$itag|$id|${q['mime'] ?? ''}';
 }
 
 /// Stream keys of every http(s) URL embedded in a player error text.

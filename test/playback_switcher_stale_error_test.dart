@@ -14,6 +14,7 @@ void confirm(ZmixPlaybackSwitcher s, int g, String url) {
 }
 
 void main() {
+  identityTests();
   test('diag4 sequence: late audio error of the failed candidate is stale', () {
     final s = ZmixPlaybackSwitcher();
     confirm(s, s.beginOpen(_good, quality: '360p'), _good);
@@ -72,5 +73,75 @@ void main() {
     s.beginOpen(_good);
     s.beginOpen(_v720, needsAudio: true, audioUrl: _a);
     expect(s.onPlayerError('Failed to open $_v720', _v720), isA<ShowError>());
+  });
+}
+
+// Identity ambiguity: the guard may fail to ignore a stale error, but must
+// never ignore an error that could belong to the current open.
+void identityTests() {
+  const base = 'https://h1.example/videoplayback';
+  ZmixPlaybackSwitcher twoOpens(String cur, String old) {
+    final s = ZmixPlaybackSwitcher();
+    s.beginOpen(old, quality: '720p');
+    s.beginOpen(cur, quality: '480p');
+    return s;
+  }
+
+  test('same itag/id/mime, different signature: treated as current', () {
+    final old = '$base?itag=136&id=A&mime=video%2Fmp4&sig=OLD&expire=1';
+    final cur = '$base?itag=136&id=A&mime=video%2Fmp4&sig=NEW&expire=2';
+    final s = twoOpens(cur, old);
+    expect(s.onPlayerError('Failed to open $old', cur), isA<ShowError>());
+  });
+
+  test('same host, different itag: distinct streams', () {
+    final old = '$base?itag=136&id=A&mime=video%2Fmp4&sig=1';
+    final cur = '$base?itag=135&id=A&mime=video%2Fmp4&sig=2';
+    final s = twoOpens(cur, old);
+    expect(s.onPlayerError('Failed to open $old', cur), isA<IgnoreStaleError>());
+  });
+
+  test('same itag, different video id: distinct streams', () {
+    final old = '$base?itag=136&id=A&mime=video%2Fmp4';
+    final cur = '$base?itag=136&id=B&mime=video%2Fmp4';
+    final s = twoOpens(cur, old);
+    expect(s.onPlayerError('Failed to open $old', cur), isA<IgnoreStaleError>());
+  });
+
+  test('encoded vs unencoded mime give the same key', () {
+    expect(streamKey('$base?itag=1&id=A&mime=video%2Fmp4'),
+        streamKey('$base?itag=1&id=A&mime=video/mp4'));
+  });
+
+  test('missing id falls back to the whole URL (no cross-video collision)', () {
+    final old = '$base?itag=136&sig=1';
+    final cur = '$base?itag=136&sig=2';
+    final s = twoOpens(cur, old);
+    expect(streamKey(old), isNot(streamKey(cur)));
+    expect(s.onPlayerError('Failed to open $old', cur), isA<IgnoreStaleError>());
+    // the identical URL is the current one: handled normally
+    expect(s.onPlayerError('Failed to open $cur', cur), isA<ShowError>());
+  });
+
+  test('truncated URL that names no known stream is not ignored', () {
+    final old = '$base?itag=136&id=A&mime=video%2Fmp4&sig=1';
+    final cur = '$base?itag=135&id=A&mime=video%2Fmp4&sig=2';
+    final s = twoOpens(cur, old);
+    expect(s.onPlayerError('Failed to open $base?ita', cur), isA<ShowError>());
+  });
+
+  test('text naming both a stale and the current stream is not ignored', () {
+    final old = '$base?itag=136&id=A&mime=video%2Fmp4&sig=1';
+    final cur = '$base?itag=135&id=A&mime=video%2Fmp4&sig=2';
+    final s = twoOpens(cur, old);
+    expect(s.onPlayerError('open $old then $cur failed', cur), isA<ShowError>());
+  });
+
+  test('non-http / unknown formats fall back to previous behavior', () {
+    final s = twoOpens('https://h/x?itag=1&id=A', 'https://h/x?itag=2&id=A');
+    expect(s.onPlayerError('ffmpeg: tcp: Connection reset', 'u'),
+        isA<ShowError>());
+    expect(s.onPlayerError('Failed to open file:///x/y.mp4', 'u'),
+        isA<ShowError>());
   });
 }
