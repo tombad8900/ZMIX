@@ -68,7 +68,7 @@ class Diag {
     _flushTimer?.cancel();
   }
 
-  static const String reportVersion = '0.3.6-diag3';
+  static const String reportVersion = '0.3.6-diag4';
 
   bool _ready = false;
   bool _enabled = false;
