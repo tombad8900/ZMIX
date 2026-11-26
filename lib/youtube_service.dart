@@ -1,5 +1,6 @@
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import 'diagnostics.dart';
 import 'models.dart';
 import 'playlist_fetcher.dart';
 import 'subtitles.dart';
@@ -144,27 +145,34 @@ class YoutubeService {
     ];
   }
 
-  /// Every quality the player offers. 0.3.5: muxed streams only.
+  /// Every quality the player offers.
   ///
-  /// 0.3.4 also offered adaptive video-only streams (played with the audio
+  /// 0.3.4 offered adaptive video-only streams (played with the audio
   /// track from [ZmixStreamChoices.audioUrl]); every adaptive pick failed
   /// on the user's device with mpv 'Failed to open' (4 screenshots,
-  /// 2026-11-25) while muxed 360p played. HYPOTHESIS, unverified (YouTube
-  /// probing is prohibited): adaptive URLs commonly require n-signature
-  /// deciphering, and youtube_explode 3.1.0's only shipped solver
-  /// (DenoEJSSolver) spawns a deno subprocess that cannot run inside an
-  /// Android app, so ZMIX constructs YoutubeExplode with no solver; the
-  /// muxed itags that played presumably tolerated the missing deciphering.
-  /// Per-itag requirements were NOT established. The supported fix path
-  /// exists upstream: BaseEJSSolver needs only an `executeJavaScript`
-  /// implementation, so an embedded JS engine (e.g. QuickJS via
-  /// flutter_js) could supply it on-device — a candidate, not shipped.
-  /// buildQualityChoices/pickAudioUrl stay (unit-tested) for that path or
-  /// an HLS one; until then `videoOnly` is passed empty so an unplayable
-  /// quality can never be offered.
-  Future<ZmixStreamChoices> resolveStreamChoices(String videoId) async {
-    final manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
+  /// 2026-11-25) while muxed 360p played. 0.3.5 therefore passed
+  /// `videoOnly: const []`.
+  ///
+  /// 0.3.6-diag RE-ENABLES the adaptive entries as an experiment under the
+  /// user-authorized diagnostic build (2026-11-26): they are offered again
+  /// so the diagnostics log can capture exactly where they fail on device
+  /// (extraction vs open vs audio attach), NOT because they are fixed.
+  /// The cause is still unverified (see Diagnostics in Settings).
+  Future<ZmixStreamChoices> resolveStreamChoices(String videoId,
+      {String? attemptId}) async {
+    Diag.I.outcome('بداية استخراج صيغ التشغيل',
+        stage: 'extract', attemptId: attemptId);
+    final StreamManifest manifest;
+    try {
+      manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
+    } catch (e) {
+      Diag.I.outcome('فشل استخراج صيغ التشغيل',
+          stage: 'extract', ok: false, detail: '$e', attemptId: attemptId);
+      rethrow;
+    }
     if (manifest.muxed.isEmpty && manifest.videoOnly.isEmpty) {
+      Diag.I.outcome('لا توجد صيغ تشغيل إطلاقًا',
+          stage: 'extract', ok: false, attemptId: attemptId);
       throw const FormatException('مفيش صيغة تشغيل متاحة للفيديو ده');
     }
     final audioUrl = pickAudioUrl([
@@ -175,25 +183,52 @@ class YoutubeService {
           mime: s.codec.mimeType,
         ),
     ]);
-    return (
-      qualities: buildQualityChoices(
-        // A video-only stream without a paired audio URL would play
-        // SILENT: never offer it; the muxed entries remain as the fallback.
-        hasAudio: audioUrl != null,
-        muxed: [
-          for (final s in manifest.muxed)
-            (
-              url: s.url.toString(),
-              height: s.videoResolution.height,
-              bitrate: s.bitrate.bitsPerSecond,
-              codec: s.videoCodec,
-            ),
-        ],
-        // Disabled on device, see the doc comment above.
-        videoOnly: const [],
-      ),
-      audioUrl: audioUrl,
+    Diag.I.outcome(
+      'اكتمل استخراج الصيغ',
+      stage: 'extract',
+      attemptId: attemptId,
+      detail: 'muxed=${manifest.muxed.length} '
+          'videoOnly=${manifest.videoOnly.length} '
+          'audioOnly=${manifest.audioOnly.length} '
+          'audioPicked=${audioUrl != null ? 'نعم' : 'لا'}',
     );
+    final qualities = buildQualityChoices(
+      // A video-only stream without a paired audio URL would play
+      // SILENT: never offer it; the muxed entries remain as the fallback.
+      hasAudio: audioUrl != null,
+      muxed: [
+        for (final s in manifest.muxed)
+          (
+            url: s.url.toString(),
+            height: s.videoResolution.height,
+            bitrate: s.bitrate.bitsPerSecond,
+            codec: s.videoCodec,
+          ),
+      ],
+      // Re-enabled experimentally in 0.3.6-diag (doc comment above).
+      videoOnly: [
+        for (final s in manifest.videoOnly)
+          (
+            url: s.url.toString(),
+            height: s.videoResolution.height,
+            bitrate: s.bitrate.bitsPerSecond,
+            codec: s.videoCodec,
+          ),
+      ],
+    );
+    if (Diag.I.verbose) {
+      for (final q in qualities) {
+        Diag.I.outcome(
+          'جودة معروضة ${q.quality}',
+          stage: 'extract',
+          attemptId: attemptId,
+          detail: '${q.videoOnly ? 'منفصلة' : 'مدمجة'} '
+              'codec=${q.codec.split('.').first} '
+              'host=${Diag.hostOf(q.url)}',
+        );
+      }
+    }
+    return (qualities: qualities, audioUrl: audioUrl);
   }
 
   /// Pure: merges muxed and adaptive entries into the picker's list, one
@@ -244,14 +279,39 @@ class YoutubeService {
     return (mp4.isNotEmpty ? mp4.first : sorted.first).url;
   }
 
-  Future<({String url, String quality})> resolvePlayable(String videoId) async {
-    final manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
+  Future<({String url, String quality})> resolvePlayable(String videoId,
+      {String? attemptId}) async {
+    Diag.I.outcome('بداية استخراج صيغة مدمجة',
+        stage: 'extract', attemptId: attemptId);
+    final StreamManifest manifest;
+    try {
+      manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
+    } catch (e) {
+      Diag.I.outcome('فشل استخراج الصيغة المدمجة',
+          stage: 'extract', ok: false, detail: '$e', attemptId: attemptId);
+      rethrow;
+    }
     if (manifest.muxed.isEmpty) {
+      Diag.I.outcome('لا توجد صيغة مدمجة',
+          stage: 'extract', ok: false, attemptId: attemptId);
       throw const FormatException('مفيش صيغة تشغيل مدمجة متاحة للفيديو ده');
     }
-    final stream = manifest.muxed.withHighestBitrate();
+    final stream = pickBestMuxed(manifest);
+    Diag.I.outcome('اكتمل استخراج الصيغة المدمجة',
+        stage: 'extract',
+        attemptId: attemptId,
+        detail: 'muxed=${manifest.muxed.length} '
+            'videoOnly=${manifest.videoOnly.length} '
+            'audioOnly=${manifest.audioOnly.length}');
     return (url: stream.url.toString(), quality: _qualityLabel(stream.videoQuality.name));
   }
+
+  /// Pure: the muxed stream with the highest bitrate. The manifest MUST be
+  /// statically typed: `withHighestBitrate` is an extension method, so a
+  /// `dynamic` receiver throws NoSuchMethodError at runtime (0.3.6-diag
+  /// regression: an untyped `late final manifest` made every call dynamic).
+  static MuxedStreamInfo pickBestMuxed(StreamManifest manifest) =>
+      manifest.muxed.withHighestBitrate();
 
   /// 'medium360' -> '360p'
   static String _qualityLabel(String raw) {

@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
+import 'diagnostics.dart';
 import 'models.dart';
 import 'playback_switcher.dart';
 import 'player/player_controls_config.dart';
@@ -57,6 +58,7 @@ class PlayerPage extends StatefulWidget {
     this.videoIndex = 0,
     this.store,
     this.playlistName,
+    this.attemptId,
   });
 
   final String title;
@@ -69,6 +71,10 @@ class PlayerPage extends StatefulWidget {
   final int videoIndex;
   final LibraryStore? store;
   final String? playlistName;
+
+  /// Diagnostics attempt id of the resolve that launched this page, so the
+  /// first open continues the same attempt instead of starting a new one.
+  final String? attemptId;
 
   @override
   State<PlayerPage> createState() => _PlayerPageState();
@@ -114,12 +120,23 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   // events from the previous stream cannot confirm the new candidate.
   int _openGen = 0;
 
+  // Diagnostics attempt id correlating every event of the current open.
+  String? _attemptId;
+
   /// Every player open goes through here: the switcher starts a new
   /// generation before mpv sees the URL, so no event from the old stream
   /// can be mistaken for evidence about the new one.
-  Future<void> _openStream(String url, {required bool play}) {
+  Future<void> _openStream(String url,
+      {required bool play, String? attemptId}) {
     _openGen = _switcher.beginOpen(url,
         quality: _currentQuality, needsAudio: _currentNeedsAudio);
+    _attemptId = attemptId ?? Diag.I.newAttempt();
+    Diag.I.outcome('بداية فتح المشغّل',
+        stage: 'open',
+        attemptId: _attemptId,
+        detail:
+            'host=${Diag.hostOf(url)} quality=${_currentQuality ?? '?'} '
+            'منفصلة=${_currentNeedsAudio ? 'نعم' : 'لا'} play=$play');
     return _player.open(Media(url), play: play);
   }
 
@@ -192,11 +209,27 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       _switcher.onMediaLoaded(uri, generation: _openGen);
     });
     _player.stream.position.listen((p) {
-      _switcher.onPlaybackProgress(
+      final confirmed = _switcher.onFirstPlaybackConfirmation(
           generation: _openGen, position: p, playing: _player.state.playing);
+      if (confirmed) {
+        // Evidence-gated confirmation (see playback_switcher.dart): the
+        // stream is actually playing, not just opened.
+        Diag.I.outcome('أول تشغيل فعلي مؤكد',
+            stage: 'play', attemptId: _attemptId);
+      }
+    });
+    _player.stream.buffering.listen((b) {
+      if (Diag.I.verbose) {
+        Diag.I.outcome(b ? 'بداية تخزين مؤقت' : 'نهاية تخزين مؤقت',
+            stage: 'play', attemptId: _attemptId);
+      }
     });
     _player.stream.error.listen((e) {
       if (!mounted) return;
+      // The raw mpv error (signed URL inside) goes ONLY to the redacted
+      // diagnostics log, never to the screen.
+      Diag.I.outcome('خطأ من المشغّل',
+          stage: 'open', ok: false, detail: e, attemptId: _attemptId);
       // Device evidence (0.3.4): a failed quality open must never trap the
       // user on a dead player or print the raw signed URL (it carries the
       // device IP). Roll back to the last confirmed stream; show the panel
@@ -213,13 +246,20 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
             await _reapplyAudio();
             await _reapplyCaption();
           });
+          Diag.I.outcome('رجوع لآخر جودة شغالة',
+              stage: 'open',
+              detail: 'quality=${quality ?? '?'}',
+              attemptId: _attemptId,
+              critical: true);
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content: Text('الجودة دي مش شغالة دلوقتي — رجعنا لآخر جودة شغالة')));
         case ShowError(:final message):
+          Diag.I.outcome('عرض رسالة الخطأ للمستخدم',
+              stage: 'open', ok: false, attemptId: _attemptId);
           setState(() => _error = message);
       }
     });
-    _openStream(widget.streamUrl, play: true);
+    _openStream(widget.streamUrl, play: true, attemptId: widget.attemptId);
     _loadQualities();
     _loadCaptions();
     _scheduleHide();
@@ -233,7 +273,8 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     if (id == null || kIsWeb) return;
     final service = YoutubeService();
     try {
-      final choices = await service.resolveStreamChoices(id);
+      final choices =
+          await service.resolveStreamChoices(id, attemptId: _attemptId);
       if (mounted) {
         setState(() {
           _qualities = choices.qualities;
@@ -375,6 +416,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
 
   /// Retry after a playback error: reopen the current stream from scratch.
   void _retry() {
+    Diag.I.ui('إعادة المحاولة بعد خطأ', attemptId: _attemptId);
     setState(() => _error = null);
     _openStream(_currentUrl, play: true).then((_) async {
       await _reapplyAudio();
@@ -389,7 +431,17 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   Future<void> _reapplyAudio() async {
     final audio = _audioUrl;
     if (_currentNeedsAudio && audio != null) {
-      await _player.setAudioTrack(AudioTrack.uri(audio));
+      try {
+        await _player.setAudioTrack(AudioTrack.uri(audio));
+        Diag.I.outcome('إرفاق مسار الصوت الخارجي',
+            stage: 'audio',
+            detail: 'host=${Diag.hostOf(audio)}',
+            attemptId: _attemptId,
+            critical: true);
+      } catch (e) {
+        Diag.I.outcome('فشل إرفاق مسار الصوت',
+            stage: 'audio', ok: false, detail: '$e', attemptId: _attemptId);
+      }
     } else {
       await _player.setAudioTrack(AudioTrack.auto());
     }
@@ -421,6 +473,10 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
 
   Future<void> _switchQuality(ZmixQualityOption q) async {
     if (q.quality == _currentQuality) return;
+    Diag.I.ui('اختيار جودة ${q.quality}',
+        detail: q.videoOnly ? 'منفصلة' : 'مدمجة',
+        attemptId: _attemptId,
+        critical: true);
     final resume = _player.state.position;
     _resumePosition = resume; // consumed if the switch fails and rolls back
     final wasPlaying = _player.state.playing;
@@ -430,7 +486,18 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       _currentNeedsAudio = q.videoOnly;
     });
     _currentUrl = q.url;
-    await _openStream(q.url, play: wasPlaying);
+    try {
+      await _openStream(q.url, play: wasPlaying);
+      Diag.I.outcome('اكتمل أمر فتح الجودة',
+          stage: 'open',
+          detail: 'quality=${q.quality}',
+          attemptId: _attemptId,
+          critical: true);
+    } catch (e) {
+      Diag.I.outcome('فشل أمر فتح الجودة',
+          stage: 'open', ok: false, detail: '$e', attemptId: _attemptId);
+      rethrow;
+    }
     await _reapplyAudio();
     await _reapplyCaption();
     // Resume (and rollback on failure) is handled by the duration/error
@@ -579,9 +646,13 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     final next = _index + delta;
     if (next < 0 || next >= siblings.length) return;
     final video = siblings[next];
+    final attempt = Diag.I.newAttempt();
+    Diag.I.ui(delta > 0 ? 'الحلقة التالية' : 'الحلقة السابقة',
+        detail: Diag.I.videoLabel(index: next, videoId: video.id),
+        attemptId: attempt);
     final service = YoutubeService();
     try {
-      final stream = await service.resolvePlayable(video.id);
+      final stream = await service.resolvePlayable(video.id, attemptId: attempt);
       await widget.store?.recordPlay(
         videoId: video.id,
         title: video.title,
@@ -604,7 +675,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         _zoomPan = Offset.zero;
       });
       _currentUrl = stream.url;
-      await _openStream(stream.url, play: true);
+      await _openStream(stream.url, play: true, attemptId: attempt);
       _loadQualities();
       // _preferredCaptionLang survives, so _loadCaptions re-selects the
       // same language on the new episode when YouTube offers it.
@@ -736,6 +807,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     final next = _speeds[(i + 1) % _speeds.length];
     setState(() => _rate = next);
     _player.setRate(next);
+    if (Diag.I.verbose) Diag.I.ui('تغيير السرعة', detail: '${next}x');
     _scheduleHide();
   }
 
@@ -788,10 +860,17 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
                   activeQualityLabel: _currentQuality,
                   onTogglePlay: () {
                     _player.playOrPause();
+                    if (Diag.I.verbose) {
+                      Diag.I.ui('تشغيل/إيقاف', attemptId: _attemptId);
+                    }
                     _scheduleHide();
                   },
                   onSeek: (pos) {
                     _player.seek(pos);
+                    if (Diag.I.verbose) {
+                      Diag.I.ui('تقديم إلى ${pos.inSeconds}ث',
+                          attemptId: _attemptId);
+                    }
                     _scheduleHide();
                   },
                   onNext: hasNext ? () => _goToSibling(1) : null,

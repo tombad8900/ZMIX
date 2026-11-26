@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import 'diagnostics.dart';
 import 'history_page.dart';
 import 'library_page.dart';
 import 'models.dart';
@@ -23,6 +24,9 @@ Future<void> main() async {
   // media_kit's native video backend has no web implementation in this build;
   // initializing it on web kills startup (blank preview). Android path only.
   if (!kIsWeb) MediaKit.ensureInitialized();
+  // Diagnostics boot before anything else: no-op until the user enables
+  // the section in Settings; never throws (lib/diagnostics.dart).
+  await Diag.I.init();
   final store = LibraryStore();
   await store.load();
   if (kDemoSeed && store.playlists.isEmpty) {
@@ -142,13 +146,32 @@ class ZmixShell extends StatefulWidget {
   State<ZmixShell> createState() => _ZmixShellState();
 }
 
-class _ZmixShellState extends State<ZmixShell> {
+class _ZmixShellState extends State<ZmixShell> with WidgetsBindingObserver {
   int _tab = 0;
 
   @override
   void initState() {
     super.initState();
     widget.store.addListener(_onStoreChanged);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Session lifecycle into the diagnostics log. A missing clean-exit
+  /// marker is NOT crash evidence (Android may never deliver `detached`);
+  /// the report says exactly that (lib/diagnostics.dart).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        Diag.I.session('التطبيق دخل الخلفية');
+      case AppLifecycleState.resumed:
+        Diag.I.session('التطبيق رجع للمقدمة');
+      case AppLifecycleState.detached:
+        Diag.I.markCleanExit();
+      case AppLifecycleState.inactive:
+        break;
+    }
   }
 
   void _onStoreChanged() {
@@ -157,6 +180,7 @@ class _ZmixShellState extends State<ZmixShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.store.removeListener(_onStoreChanged);
     super.dispose();
   }

@@ -123,6 +123,21 @@ class ZmixPlaybackSwitcher {
     return true;
   }
 
+  /// Same evidence rules as [onPlaybackProgress], but true only on the call
+  /// that moves this generation from unconfirmed to confirmed. For logging:
+  /// [onPlaybackProgress] returns true on every advancing tick, so using it
+  /// directly as a "first play" signal logs once per position event.
+  bool onFirstPlaybackConfirmation({
+    required int generation,
+    required Duration position,
+    required bool playing,
+  }) {
+    final was = _confirmed;
+    final now = onPlaybackProgress(
+        generation: generation, position: position, playing: playing);
+    return now && !was;
+  }
+
   /// Called when the live player reports an error for [failedUrl].
   /// Rolls back to the last confirmed stream when there is a different one;
   /// otherwise (initial open failed, or the rollback itself failed) shows
