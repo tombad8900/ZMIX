@@ -123,6 +123,15 @@ void identityTests() {
     expect(s.onPlayerError('Failed to open $cur', cur), isA<ShowError>());
   });
 
+  test('stale URL plus an unknown URL is not ignored (Pally review)', () {
+    final old = '$base?itag=136&id=A&mime=video%2Fmp4&sig=1';
+    final cur = '$base?itag=135&id=A&mime=video%2Fmp4&sig=2';
+    final s = twoOpens(cur, old);
+    expect(
+        s.onPlayerError('open $old via https://x.example/other', cur),
+        isA<ShowError>());
+  });
+
   test('truncated URL that names no known stream is not ignored', () {
     final old = '$base?itag=136&id=A&mime=video%2Fmp4&sig=1';
     final cur = '$base?itag=135&id=A&mime=video%2Fmp4&sig=2';

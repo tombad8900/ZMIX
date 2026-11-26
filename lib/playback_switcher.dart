@@ -180,15 +180,18 @@ class ZmixPlaybackSwitcher {
 
   /// Called with the raw player error text. media_kit's error stream has no
   /// media identity, so attribution comes from the URL mpv embeds in the
-  /// text: when it names only streams of SUPERSEDED opens (and none of the
-  /// current open), the error is stale and must not cancel or roll back the
+  /// text: when every URL it names is a stream of a SUPERSEDED open (none of
+  /// the current open, none unknown), the error is stale and must not cancel or roll back the
   /// current selection. Text with no URL, or naming the current open, is
   /// handled exactly as before, so a genuine current failure is never hidden.
   SwitchDecision onPlayerError(String text, String currentUrl) {
     final keys = streamKeysInText(text);
+    // Ignore only when EVERY URL in the text is a known superseded stream.
+    // An unknown URL next to a stale one could be about anything, so the
+    // error is handled as before.
     if (keys.isNotEmpty &&
-        keys.every((k) => !_currentKeys.contains(k)) &&
-        keys.any(_supersededKeys.contains)) {
+        keys.every((k) =>
+            _supersededKeys.contains(k) && !_currentKeys.contains(k))) {
       return const IgnoreStaleError();
     }
     return onError(currentUrl);
