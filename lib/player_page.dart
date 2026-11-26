@@ -674,6 +674,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         _error = null;
         _qualities = [];
         _audioUrl = null;
+        _clientHeaders = null; // combined: never carry the previous episode's extraction headers
         _currentNeedsAudio = false;
         _captions = [];
         _activeCaption = null;
