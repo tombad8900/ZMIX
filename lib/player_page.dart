@@ -130,7 +130,9 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   Future<void> _openStream(String url,
       {required bool play, String? attemptId}) {
     _openGen = _switcher.beginOpen(url,
-        quality: _currentQuality, needsAudio: _currentNeedsAudio);
+        quality: _currentQuality,
+        needsAudio: _currentNeedsAudio,
+        audioUrl: _currentNeedsAudio ? _audioUrl : null);
     _attemptId = attemptId ?? Diag.I.newAttempt();
     Diag.I.outcome('بداية فتح المشغّل',
         stage: 'open',
@@ -235,7 +237,10 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       // user on a dead player or print the raw signed URL (it carries the
       // device IP). Roll back to the last confirmed stream; show the panel
       // only when there is nothing to roll back to.
-      switch (_switcher.onError(_currentUrl)) {
+      switch (_switcher.onPlayerError(e, _currentUrl)) {
+        case IgnoreStaleError():
+          Diag.I.outcome('تجاهل خطأ من تشغيل سابق',
+              stage: 'open', attemptId: _attemptId, critical: true);
         case RollbackToLastGood(:final url, :final quality, :final needsAudio):
           setState(() {
             _error = null;
