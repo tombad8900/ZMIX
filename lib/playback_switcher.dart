@@ -41,6 +41,29 @@ class ShowError implements SwitchDecision {
   final String message;
 }
 
+/// The error belongs to a superseded stream (proved by the failing URL in
+/// the error text): leave the current selection untouched.
+class IgnoreStaleError implements SwitchDecision {
+  const IgnoreStaleError();
+}
+
+/// Stable identity of a stream URL that survives re-encoding and ignores
+/// per-request noise: itag + id + mime when present, else the whole string.
+String streamKey(String url) {
+  final u = Uri.tryParse(url);
+  final q = u?.queryParameters ?? const <String, String>{};
+  if (q['itag'] == null) return url;
+  return '${q['itag']}|${q['id'] ?? ''}|${q['mime'] ?? ''}';
+}
+
+/// Stream keys of every http(s) URL embedded in a player error text.
+/// mpv prints the failing resource ("Failed to open <url>", "Can not open
+/// external file <url>"), so the text itself names the stream it is about.
+List<String> streamKeysInText(String text) => [
+      for (final m in RegExp(r'https?://[^\s\x27"]+').allMatches(text))
+        streamKey(m.group(0)!.replaceAll(RegExp(r'[.,;)]+$'), '')),
+    ];
+
 /// Tracks the last stream confirmed playing and decides recovery on error.
 class ZmixPlaybackSwitcher {
   // Last-good: replaced ONLY by confirmed playback evidence.
@@ -66,6 +89,12 @@ class ZmixPlaybackSwitcher {
   /// THAT stream falls through to the error panel instead of looping.
   String? _recoveryUrl;
 
+  // Stream keys of the current open (video URL and external audio URL) and
+  // of every superseded open. Used to attribute an error to a stream by the
+  // URL in its text, never by timing.
+  Set<String> _currentKeys = {};
+  final Set<String> _supersededKeys = {};
+
   /// The current open generation id (for tests and wiring asserts).
   int get generation => _generation;
 
@@ -75,7 +104,11 @@ class ZmixPlaybackSwitcher {
   /// A new open attempt begins; returns its generation id. Confirmation
   /// evidence is accepted only for the latest generation, so stale events
   /// from the previous stream cannot confirm the new candidate.
-  int beginOpen(String url, {String? quality, bool needsAudio = false}) {
+  int beginOpen(String url,
+      {String? quality, bool needsAudio = false, String? audioUrl}) {
+    _supersededKeys.addAll(_currentKeys);
+    _currentKeys = {streamKey(url), if (audioUrl != null) streamKey(audioUrl)};
+    _supersededKeys.removeAll(_currentKeys);
     _generation++;
     _pendingUrl = url;
     _pendingQuality = quality;
@@ -136,6 +169,22 @@ class ZmixPlaybackSwitcher {
     final now = onPlaybackProgress(
         generation: generation, position: position, playing: playing);
     return now && !was;
+  }
+
+  /// Called with the raw player error text. media_kit's error stream has no
+  /// media identity, so attribution comes from the URL mpv embeds in the
+  /// text: when it names only streams of SUPERSEDED opens (and none of the
+  /// current open), the error is stale and must not cancel or roll back the
+  /// current selection. Text with no URL, or naming the current open, is
+  /// handled exactly as before, so a genuine current failure is never hidden.
+  SwitchDecision onPlayerError(String text, String currentUrl) {
+    final keys = streamKeysInText(text);
+    if (keys.isNotEmpty &&
+        keys.every((k) => !_currentKeys.contains(k)) &&
+        keys.any(_supersededKeys.contains)) {
+      return const IgnoreStaleError();
+    }
+    return onError(currentUrl);
   }
 
   /// Called when the live player reports an error for [failedUrl].
