@@ -15,7 +15,7 @@ Future<void> reapplyExternalAudio({
   required bool currentNeedsAudio,
   required String? audioUrl,
   required AudioSourceSetter setAudio,
-  required String? attemptId,
+  required String? Function() attemptId,
   Diag? diag,
 }) async {
   final d = diag ?? Diag.I;
@@ -26,11 +26,11 @@ Future<void> reapplyExternalAudio({
       d.outcome('إرفاق مسار الصوت الخارجي',
           stage: 'audio',
           detail: 'host=${Diag.hostOf(audio)}',
-          attemptId: attemptId,
+          attemptId: attemptId(),
           critical: true);
     } catch (e) {
       d.outcome('فشل إرفاق مسار الصوت',
-          stage: 'audio', ok: false, detail: '$e', attemptId: attemptId);
+          stage: 'audio', ok: false, detail: '$e', attemptId: attemptId());
     }
   } else {
     await setAudio(null);

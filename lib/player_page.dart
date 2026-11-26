@@ -432,7 +432,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   Future<void> _reapplyAudio() => reapplyExternalAudio(
         currentNeedsAudio: _currentNeedsAudio,
         audioUrl: _audioUrl,
-        attemptId: _attemptId,
+        attemptId: () => _attemptId,
         setAudio: (url) => _player.setAudioTrack(
             url == null ? AudioTrack.auto() : AudioTrack.uri(url)),
       );
