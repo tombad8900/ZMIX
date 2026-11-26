@@ -61,7 +61,17 @@ class ZmixCaptionTrack {
 
 /// Thin wrapper over youtube_explode_dart for the library flows.
 class YoutubeService {
-  YoutubeService() : _yt = YoutubeExplode();
+  /// [manifestFetcher] is a test seam for [resolveStreamChoices]: when given,
+  /// it replaces the network call (one call per API client). Production code
+  /// passes nothing.
+  YoutubeService({
+    Future<StreamManifest> Function(String videoId, YoutubeApiClient client)?
+        manifestFetcher,
+  })  : _yt = YoutubeExplode(),
+        _manifestFetcher = manifestFetcher;
+
+  final Future<StreamManifest> Function(String videoId, YoutubeApiClient client)?
+      _manifestFetcher;
 
   final YoutubeExplode _yt;
 
@@ -172,8 +182,10 @@ class YoutubeService {
       // Same behavior as the library default (androidSdkless, then tv) but
       // each call names ONE client, so every URL below has known provenance.
       final r = await fetchWithProvenance<StreamManifest>(
-          (c) => _yt.videos.streamsClient
-              .getManifest(VideoId(videoId), ytClients: [c]),
+          (c) => _manifestFetcher != null
+              ? _manifestFetcher(videoId, c)
+              : _yt.videos.streamsClient
+                  .getManifest(VideoId(videoId), ytClients: [c]),
           (m) => m.streams.isEmpty);
       manifest = r.manifest;
       usedClient = r.client;
