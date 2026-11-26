@@ -1,5 +1,6 @@
 import 'grouper.dart';
 import 'models.dart';
+import 'player/player_episodes_panel.dart';
 
 /// The list the player's episodes panel and next/previous walk, plus where
 /// the playing video sits in it.
@@ -44,3 +45,22 @@ String? currentVideoId({
   }
   return initialVideoId;
 }
+
+/// The episodes panel's rows, built from the SAME queue the player walks with
+/// next/previous (never from the raw playlist). Row i is queue[i].
+List<ZmixPanelEpisode> panelEpisodesFor(List<LibraryVideo> queue) => [
+      for (var i = 0; i < queue.length; i++)
+        ZmixPanelEpisode(
+          number: i + 1,
+          // Untitled (source-hidden) entries keep the library's neutral
+          // label: no title is not evidence of unavailability.
+          title: queue[i].isSourceUntitled ? 'بلا عنوان' : queue[i].title,
+          thumbnail: queue[i].thumbUrl.isNotEmpty ? queue[i].thumbUrl : null,
+          runtimeSeconds: queue[i].durationSeconds,
+        ),
+    ];
+
+/// True when an async result (qualities, captions) that was requested for
+/// [requestedId] must be dropped because the player has since moved on.
+bool isStaleForCurrent(String requestedId, String? currentId) =>
+    requestedId != currentId;

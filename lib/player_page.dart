@@ -279,6 +279,8 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     try {
       final choices =
           await service.resolveStreamChoices(id, attemptId: _attemptId);
+      // The user may have moved to another episode while this was loading.
+      if (mounted && isStaleForCurrent(id, _currentVideoId)) return;
       if (mounted) {
         setState(() {
           _qualities = choices.qualities;
@@ -513,6 +515,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     try {
       final tracks = await service.captionTracks(id);
       if (!mounted) return;
+      if (isStaleForCurrent(id, _currentVideoId)) return; // moved on
       setState(() => _captions = tracks);
       final pref = _preferredCaptionLang;
       if (pref != null && _activeCaption == null) {
@@ -569,9 +572,13 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     if (_captionLoading) return;
     setState(() => _captionLoading = true);
     final service = YoutubeService();
+    final requestedFor = _currentVideoId;
     try {
       final srt = await service.captionSrt(track);
       if (!mounted) return;
+      // A track fetched for the previous episode must not be applied to the
+      // current one (the caller's finally still clears the loading flag).
+      if (requestedFor != null && isStaleForCurrent(requestedFor, _currentVideoId)) return;
       setState(() {
         _activeCaption = track;
         _activeCaptionSrt = srt;
@@ -608,19 +615,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     if (siblings == null || siblings.length < 2) return;
     showZmixEpisodesPanel(
       context,
-      episodes: [
-        for (var i = 0; i < siblings.length; i++)
-          ZmixPanelEpisode(
-            number: i + 1,
-            // Untitled (source-hidden) entries keep the library's neutral
-            // label: no title is not evidence of unavailability.
-            title: siblings[i].isSourceUntitled ? 'بلا عنوان' : siblings[i].title,
-            thumbnail: siblings[i].thumbUrl.isNotEmpty
-                ? siblings[i].thumbUrl
-                : null,
-            runtimeSeconds: siblings[i].durationSeconds,
-          ),
-      ],
+      episodes: panelEpisodesFor(siblings),
       currentIndex: _index,
       onSelect: (i) {
         Navigator.of(context).pop();

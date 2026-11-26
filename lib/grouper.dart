@@ -191,8 +191,12 @@ class _GroupBuilder {
       bySeason.putIfAbsent(seasons[indices.indexOf(i)], () => []).add(i);
     }
     bySeason.forEach((season, idxs) {
-      idxs.sort((a, b) =>
-          (infos[a]?.number ?? 0).compareTo(infos[b]?.number ?? 0));
+      // Ties (duplicate episode numbers) keep playlist order: List.sort is
+      // not guaranteed stable, so break them on the original index.
+      idxs.sort((a, b) {
+        final c = (infos[a]?.number ?? 0).compareTo(infos[b]?.number ?? 0);
+        return c != 0 ? c : a.compareTo(b);
+      });
       g.seasons[season] = [for (final i in idxs) videos[i]];
     });
     return g;
