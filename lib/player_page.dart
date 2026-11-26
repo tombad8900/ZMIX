@@ -9,6 +9,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 
 import 'audio_attach.dart';
 import 'diagnostics.dart';
+import 'player_log_status.dart';
 import 'models.dart';
 import 'playback_switcher.dart';
 import 'player/player_controls_config.dart';
@@ -226,6 +227,15 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         Diag.I.outcome(b ? 'بداية تخزين مؤقت' : 'نهاية تخزين مؤقت',
             stage: 'play', attemptId: _attemptId);
       }
+    });
+    // Instrumentation only (not a fix for #6): record the stage/status class
+    // of mpv error lines, never their text.
+    _player.stream.log.listen((l) {
+      if (!mounted) return;
+      final st = PlayerLogStatus.classify(l.prefix, l.level, l.text);
+      if (st == null) return;
+      Diag.I.outcome('حالة سجل المشغّل',
+          stage: 'open', ok: false, detail: st.label, attemptId: _attemptId);
     });
     _player.stream.error.listen((e) {
       if (!mounted) return;
