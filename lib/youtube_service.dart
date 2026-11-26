@@ -1,6 +1,7 @@
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import 'diagnostics.dart';
+import 'stream_headers.dart';
 import 'models.dart';
 import 'playlist_fetcher.dart';
 import 'subtitles.dart';
@@ -33,6 +34,9 @@ class ZmixQualityOption {
 typedef ZmixStreamChoices = ({
   List<ZmixQualityOption> qualities,
   String? audioUrl,
+  /// Headers matching the API client that produced these URLs (see
+  /// stream_headers.dart). Null when that client declares none.
+  Map<String, String>? httpHeaders,
 });
 
 /// One subtitle language a video offers, deduplicated to a single track.
@@ -163,8 +167,22 @@ class YoutubeService {
     Diag.I.outcome('بداية استخراج صيغ التشغيل',
         stage: 'extract', attemptId: attemptId);
     final StreamManifest manifest;
+    final YoutubeApiClient usedClient;
     try {
-      manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
+      // Same behavior as the library default (androidSdkless, then tv when
+      // that yields nothing) but explicit, so we know which client's URLs we
+      // hold and can pair them with that client's declared headers.
+      var used = YoutubeApiClient.androidSdkless;
+      var m = await _yt.videos.streamsClient
+          .getManifest(VideoId(videoId), ytClients: [used]).catchError(
+              (Object _) => StreamManifest(const []));
+      if (m.streams.isEmpty) {
+        used = YoutubeApiClient.tv;
+        m = await _yt.videos.streamsClient
+            .getManifest(VideoId(videoId), ytClients: [used]);
+      }
+      manifest = m;
+      usedClient = used;
     } catch (e) {
       Diag.I.outcome('فشل استخراج صيغ التشغيل',
           stage: 'extract', ok: false, detail: '$e', attemptId: attemptId);
@@ -228,7 +246,11 @@ class YoutubeService {
         );
       }
     }
-    return (qualities: qualities, audioUrl: audioUrl);
+    return (
+      qualities: qualities,
+      audioUrl: audioUrl,
+      httpHeaders: streamHeadersFor(usedClient),
+    );
   }
 
   /// Pure: merges muxed and adaptive entries into the picker's list, one
