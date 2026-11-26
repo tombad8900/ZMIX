@@ -19,7 +19,13 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "app.zmix.zmix.diag"
+        // Default is the installed diag app id. A side-by-side install that
+        // leaves that app and its data alone must set both, e.g.
+        //   -PzmixAppId=app.zmix.zmix.diag5 -PzmixAppLabel="ZMIX trial"
+        applicationId =
+            (project.findProperty("zmixAppId") as String?) ?: "app.zmix.zmix.diag"
+        manifestPlaceholders["zmixAppLabel"] =
+            (project.findProperty("zmixAppLabel") as String?) ?: "ZMIX تشخيص"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
