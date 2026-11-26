@@ -7,8 +7,12 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
+import 'audio_attach.dart';
 import 'diagnostics.dart';
+import 'player_log_status.dart';
+import 'stream_headers.dart';
 import 'models.dart';
+import 'player_queue.dart';
 import 'playback_switcher.dart';
 import 'player/player_controls_config.dart';
 import 'player/player_controls_overlay.dart';
@@ -108,6 +112,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   // a future embedded solver / HLS path but returns muxed only.
   List<ZmixQualityOption> _qualities = [];
   String? _audioUrl;
+  Map<String, String>? _clientHeaders;
   bool _currentNeedsAudio = false;
 
   // Position to resume after a quality switch (or an error rollback
@@ -129,7 +134,9 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   Future<void> _openStream(String url,
       {required bool play, String? attemptId}) {
     _openGen = _switcher.beginOpen(url,
-        quality: _currentQuality, needsAudio: _currentNeedsAudio);
+        quality: _currentQuality,
+        needsAudio: _currentNeedsAudio,
+        audioUrl: _currentNeedsAudio ? _audioUrl : null);
     _attemptId = attemptId ?? Diag.I.newAttempt();
     Diag.I.outcome('بداية فتح المشغّل',
         stage: 'open',
@@ -137,7 +144,13 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         detail:
             'host=${Diag.hostOf(url)} quality=${_currentQuality ?? '?'} '
             'منفصلة=${_currentNeedsAudio ? 'نعم' : 'لا'} play=$play');
-    return _player.open(Media(url), play: play);
+    // Hypothesis-driven (stream_headers.dart): adaptive opens carry the
+    // extraction client's declared headers; muxed opens are unchanged.
+    return _player.open(
+        buildOpenMedia(url,
+            needsExternalAudio: _currentNeedsAudio,
+            clientHeaders: _clientHeaders),
+        play: play);
   }
 
   // Subtitles (YouTube caption tracks -> SRT -> media_kit external track).
@@ -224,6 +237,15 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
             stage: 'play', attemptId: _attemptId);
       }
     });
+    // Instrumentation only (not a fix for #6): record the stage/status class
+    // of mpv error lines, never their text.
+    _player.stream.log.listen((l) {
+      if (!mounted) return;
+      final st = PlayerLogStatus.classify(l.prefix, l.level, l.text);
+      if (st == null) return;
+      Diag.I.outcome('حالة سجل المشغّل',
+          stage: 'open', ok: false, detail: st.label, attemptId: _attemptId);
+    });
     _player.stream.error.listen((e) {
       if (!mounted) return;
       // The raw mpv error (signed URL inside) goes ONLY to the redacted
@@ -234,7 +256,10 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       // user on a dead player or print the raw signed URL (it carries the
       // device IP). Roll back to the last confirmed stream; show the panel
       // only when there is nothing to roll back to.
-      switch (_switcher.onError(_currentUrl)) {
+      switch (_switcher.onPlayerError(e, _currentUrl)) {
+        case IgnoreStaleError():
+          Diag.I.outcome('تجاهل خطأ من تشغيل سابق',
+              stage: 'open', attemptId: _attemptId, critical: true);
         case RollbackToLastGood(:final url, :final quality, :final needsAudio):
           setState(() {
             _error = null;
@@ -266,19 +291,22 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   }
 
   Future<void> _loadQualities() async {
-    final id = widget.videoId ??
-        ((_index < (widget.siblings?.length ?? 0))
-            ? widget.siblings![_index].id
-            : null);
+    final id = _currentVideoId;
     if (id == null || kIsWeb) return;
     final service = YoutubeService();
     try {
-      final choices =
-          await service.resolveStreamChoices(id, attemptId: _attemptId);
-      if (mounted) {
+      // The user may have moved to another episode while this was loading.
+      final choices = await fetchIfStillCurrent(
+        requestedId: id,
+        currentId: () => _currentVideoId,
+        isMounted: () => mounted,
+        fetch: () => service.resolveStreamChoices(id, attemptId: _attemptId),
+      );
+      if (choices != null) {
         setState(() {
           _qualities = choices.qualities;
           _audioUrl = choices.audioUrl;
+          _clientHeaders = choices.httpHeaders;
         });
       }
     } catch (_) {
@@ -428,24 +456,13 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
 
   /// Re-attaches the external audio track when the current URL is a
   /// video-only adaptive stream; detaches it for muxed (audio built in).
-  Future<void> _reapplyAudio() async {
-    final audio = _audioUrl;
-    if (_currentNeedsAudio && audio != null) {
-      try {
-        await _player.setAudioTrack(AudioTrack.uri(audio));
-        Diag.I.outcome('إرفاق مسار الصوت الخارجي',
-            stage: 'audio',
-            detail: 'host=${Diag.hostOf(audio)}',
-            attemptId: _attemptId,
-            critical: true);
-      } catch (e) {
-        Diag.I.outcome('فشل إرفاق مسار الصوت',
-            stage: 'audio', ok: false, detail: '$e', attemptId: _attemptId);
-      }
-    } else {
-      await _player.setAudioTrack(AudioTrack.auto());
-    }
-  }
+  Future<void> _reapplyAudio() => reapplyExternalAudio(
+        currentNeedsAudio: _currentNeedsAudio,
+        audioUrl: _audioUrl,
+        attemptId: () => _attemptId,
+        setAudio: (url) => _player.setAudioTrack(
+            url == null ? AudioTrack.auto() : AudioTrack.uri(url)),
+      );
 
   // ── Quality ────────────────────────────────────────────────────────────
 
@@ -506,8 +523,8 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
 
   // ── Subtitles ─────────────────────────────────────────────────────────
 
-  String? get _currentVideoId => widget.videoId ??
-      ((_index < (widget.siblings?.length ?? 0)) ? widget.siblings![_index].id : null);
+  String? get _currentVideoId => currentVideoId(
+      initialVideoId: widget.videoId, queue: widget.siblings, index: _index);
 
   /// Lists the caption tracks of the current video. No tracks -> the
   /// subtitle button drops out of the bar (upstream's own null-skip rule).
@@ -518,8 +535,13 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     if (id == null || kIsWeb) return;
     final service = YoutubeService();
     try {
-      final tracks = await service.captionTracks(id);
-      if (!mounted) return;
+      final tracks = await fetchIfStillCurrent(
+        requestedId: id,
+        currentId: () => _currentVideoId,
+        isMounted: () => mounted,
+        fetch: () => service.captionTracks(id),
+      );
+      if (tracks == null) return; // moved on or unmounted
       setState(() => _captions = tracks);
       final pref = _preferredCaptionLang;
       if (pref != null && _activeCaption == null) {
@@ -576,9 +598,13 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     if (_captionLoading) return;
     setState(() => _captionLoading = true);
     final service = YoutubeService();
+    final requestedFor = _currentVideoId;
     try {
       final srt = await service.captionSrt(track);
       if (!mounted) return;
+      // A track fetched for the previous episode must not be applied to the
+      // current one (the caller's finally still clears the loading flag).
+      if (requestedFor != null && isStaleForCurrent(requestedFor, _currentVideoId)) return;
       setState(() {
         _activeCaption = track;
         _activeCaptionSrt = srt;
@@ -615,19 +641,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     if (siblings == null || siblings.length < 2) return;
     showZmixEpisodesPanel(
       context,
-      episodes: [
-        for (var i = 0; i < siblings.length; i++)
-          ZmixPanelEpisode(
-            number: i + 1,
-            // Untitled (source-hidden) entries keep the library's neutral
-            // label: no title is not evidence of unavailability.
-            title: siblings[i].isSourceUntitled ? 'بلا عنوان' : siblings[i].title,
-            thumbnail: siblings[i].thumbUrl.isNotEmpty
-                ? siblings[i].thumbUrl
-                : null,
-            runtimeSeconds: siblings[i].durationSeconds,
-          ),
-      ],
+      episodes: panelEpisodesFor(siblings),
       currentIndex: _index,
       onSelect: (i) {
         Navigator.of(context).pop();
@@ -651,8 +665,12 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         detail: Diag.I.videoLabel(index: next, videoId: video.id),
         attemptId: attempt);
     final service = YoutubeService();
+    // Evidence only: which step of the episode switch threw (the catch below
+    // used to swallow every failure with no log).
+    var step = 'resolve';
     try {
       final stream = await service.resolvePlayable(video.id, attemptId: attempt);
+      step = 'recordPlay';
       await widget.store?.recordPlay(
         videoId: video.id,
         title: video.title,
@@ -667,6 +685,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         _error = null;
         _qualities = [];
         _audioUrl = null;
+        _clientHeaders = null; // combined: never carry the previous episode's extraction headers
         _currentNeedsAudio = false;
         _captions = [];
         _activeCaption = null;
@@ -675,13 +694,22 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         _zoomPan = Offset.zero;
       });
       _currentUrl = stream.url;
+      step = 'open';
       await _openStream(stream.url, play: true, attemptId: attempt);
+      step = 'after-open';
       _loadQualities();
       // _preferredCaptionLang survives, so _loadCaptions re-selects the
       // same language on the new episode when YouTube offers it.
       _loadCaptions();
       _scheduleHide();
-    } catch (_) {
+    } catch (e) {
+      // Type only: the message can embed a signed URL / device IP.
+      Diag.I.outcome('فشل تبديل الحلقة',
+          stage: 'open',
+          ok: false,
+          detail: 'step=$step type=${e.runtimeType}',
+          attemptId: attempt,
+          critical: true);
       if (mounted) {
         setState(() => _error = 'مش قادرين نشغّل الفيديو ده دلوقتي');
       }
