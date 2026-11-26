@@ -10,6 +10,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'audio_attach.dart';
 import 'diagnostics.dart';
 import 'models.dart';
+import 'player_queue.dart';
 import 'playback_switcher.dart';
 import 'player/player_controls_config.dart';
 import 'player/player_controls_overlay.dart';
@@ -272,10 +273,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   }
 
   Future<void> _loadQualities() async {
-    final id = widget.videoId ??
-        ((_index < (widget.siblings?.length ?? 0))
-            ? widget.siblings![_index].id
-            : null);
+    final id = _currentVideoId;
     if (id == null || kIsWeb) return;
     final service = YoutubeService();
     try {
@@ -501,8 +499,8 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
 
   // ── Subtitles ─────────────────────────────────────────────────────────
 
-  String? get _currentVideoId => widget.videoId ??
-      ((_index < (widget.siblings?.length ?? 0)) ? widget.siblings![_index].id : null);
+  String? get _currentVideoId => currentVideoId(
+      initialVideoId: widget.videoId, queue: widget.siblings, index: _index);
 
   /// Lists the caption tracks of the current video. No tracks -> the
   /// subtitle button drops out of the bar (upstream's own null-skip rule).
