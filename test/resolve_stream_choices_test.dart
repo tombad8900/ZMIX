@@ -134,10 +134,9 @@ void main() {
 
       final choices = await service.resolveStreamChoices(_videoId);
 
-      expect(clients, [
-        same(YoutubeApiClient.androidSdkless),
-        same(YoutubeApiClient.tv),
-      ]);
+      expect(clients, hasLength(2));
+      expect(clients[0], same(YoutubeApiClient.androidSdkless));
+      expect(clients[1], same(YoutubeApiClient.tv));
       expect(choices.qualities.map((q) => q.quality).toList(), ['720p']);
       expect(choices.qualities.single.videoOnly, isTrue);
       expect(choices.httpHeaders, {
@@ -160,10 +159,9 @@ void main() {
 
       final choices = await service.resolveStreamChoices(_videoId);
 
-      expect(clients, [
-        same(YoutubeApiClient.androidSdkless),
-        same(YoutubeApiClient.tv),
-      ]);
+      expect(clients, hasLength(2));
+      expect(clients[0], same(YoutubeApiClient.androidSdkless));
+      expect(clients[1], same(YoutubeApiClient.tv));
       expect(choices.qualities.single.url, 'https://example.invalid/tv-muxed-360');
       expect(choices.httpHeaders, {
         'user-agent': _userAgentFor(YoutubeApiClient.tv),
