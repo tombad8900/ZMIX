@@ -665,8 +665,12 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         detail: Diag.I.videoLabel(index: next, videoId: video.id),
         attemptId: attempt);
     final service = YoutubeService();
+    // Evidence only: which step of the episode switch threw (the catch below
+    // used to swallow every failure with no log).
+    var step = 'resolve';
     try {
       final stream = await service.resolvePlayable(video.id, attemptId: attempt);
+      step = 'recordPlay';
       await widget.store?.recordPlay(
         videoId: video.id,
         title: video.title,
@@ -690,13 +694,22 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         _zoomPan = Offset.zero;
       });
       _currentUrl = stream.url;
+      step = 'open';
       await _openStream(stream.url, play: true, attemptId: attempt);
+      step = 'after-open';
       _loadQualities();
       // _preferredCaptionLang survives, so _loadCaptions re-selects the
       // same language on the new episode when YouTube offers it.
       _loadCaptions();
       _scheduleHide();
-    } catch (_) {
+    } catch (e) {
+      // Type only: the message can embed a signed URL / device IP.
+      Diag.I.outcome('فشل تبديل الحلقة',
+          stage: 'open',
+          ok: false,
+          detail: 'step=$step type=${e.runtimeType}',
+          attemptId: attempt,
+          critical: true);
       if (mounted) {
         setState(() => _error = 'مش قادرين نشغّل الفيديو ده دلوقتي');
       }
