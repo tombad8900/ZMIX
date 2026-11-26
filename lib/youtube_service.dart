@@ -1,6 +1,7 @@
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import 'diagnostics.dart';
+import 'stream_headers.dart';
 import 'models.dart';
 import 'playlist_fetcher.dart';
 import 'subtitles.dart';
@@ -33,6 +34,9 @@ class ZmixQualityOption {
 typedef ZmixStreamChoices = ({
   List<ZmixQualityOption> qualities,
   String? audioUrl,
+  /// Headers matching the API client that produced these URLs (see
+  /// stream_headers.dart). Null when that client declares none.
+  Map<String, String>? httpHeaders,
 });
 
 /// One subtitle language a video offers, deduplicated to a single track.
@@ -57,7 +61,17 @@ class ZmixCaptionTrack {
 
 /// Thin wrapper over youtube_explode_dart for the library flows.
 class YoutubeService {
-  YoutubeService() : _yt = YoutubeExplode();
+  /// [manifestFetcher] is a test seam for [resolveStreamChoices]: when given,
+  /// it replaces the network call (one call per API client). Production code
+  /// passes nothing.
+  YoutubeService({
+    Future<StreamManifest> Function(String videoId, YoutubeApiClient client)?
+        manifestFetcher,
+  })  : _yt = YoutubeExplode(),
+        _manifestFetcher = manifestFetcher;
+
+  final Future<StreamManifest> Function(String videoId, YoutubeApiClient client)?
+      _manifestFetcher;
 
   final YoutubeExplode _yt;
 
@@ -163,8 +177,22 @@ class YoutubeService {
     Diag.I.outcome('بداية استخراج صيغ التشغيل',
         stage: 'extract', attemptId: attemptId);
     final StreamManifest manifest;
+    final YoutubeApiClient usedClient;
     try {
-      manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
+      // Same behavior as the library default (androidSdkless, then tv) but
+      // each call names ONE client, so every URL below has known provenance.
+      final r = await fetchWithProvenance<StreamManifest>(
+          (c) => _manifestFetcher != null
+              ? _manifestFetcher(videoId, c)
+              : _yt.videos.streamsClient
+                  .getManifest(VideoId(videoId), ytClients: [c]),
+          (m) => m.streams.isEmpty);
+      manifest = r.manifest;
+      usedClient = r.client;
+      Diag.I.outcome('عميل الاستخراج',
+          stage: 'extract',
+          attemptId: attemptId,
+          detail: '${usedClient.payload['context']['client']['clientName']}');
     } catch (e) {
       Diag.I.outcome('فشل استخراج صيغ التشغيل',
           stage: 'extract', ok: false, detail: '$e', attemptId: attemptId);
@@ -228,7 +256,11 @@ class YoutubeService {
         );
       }
     }
-    return (qualities: qualities, audioUrl: audioUrl);
+    return (
+      qualities: qualities,
+      audioUrl: audioUrl,
+      httpHeaders: streamHeadersFor(usedClient),
+    );
   }
 
   /// Pure: merges muxed and adaptive entries into the picker's list, one

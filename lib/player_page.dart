@@ -10,6 +10,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'audio_attach.dart';
 import 'diagnostics.dart';
 import 'player_log_status.dart';
+import 'stream_headers.dart';
 import 'models.dart';
 import 'playback_switcher.dart';
 import 'player/player_controls_config.dart';
@@ -110,6 +111,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   // a future embedded solver / HLS path but returns muxed only.
   List<ZmixQualityOption> _qualities = [];
   String? _audioUrl;
+  Map<String, String>? _clientHeaders;
   bool _currentNeedsAudio = false;
 
   // Position to resume after a quality switch (or an error rollback
@@ -141,7 +143,13 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         detail:
             'host=${Diag.hostOf(url)} quality=${_currentQuality ?? '?'} '
             'منفصلة=${_currentNeedsAudio ? 'نعم' : 'لا'} play=$play');
-    return _player.open(Media(url), play: play);
+    // Hypothesis-driven (stream_headers.dart): adaptive opens carry the
+    // extraction client's declared headers; muxed opens are unchanged.
+    return _player.open(
+        buildOpenMedia(url,
+            needsExternalAudio: _currentNeedsAudio,
+            clientHeaders: _clientHeaders),
+        play: play);
   }
 
   // Subtitles (YouTube caption tracks -> SRT -> media_kit external track).
@@ -295,6 +303,7 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
         setState(() {
           _qualities = choices.qualities;
           _audioUrl = choices.audioUrl;
+          _clientHeaders = choices.httpHeaders;
         });
       }
     } catch (_) {
