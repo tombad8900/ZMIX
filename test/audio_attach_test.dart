@@ -17,6 +17,7 @@ void main() {
     await d.setEnabled(true);
   });
   tearDown(() async {
+    await d.flush(); // let background writes finish before deleting the dir
     d.disposeForTest();
     if (dir.existsSync()) await dir.delete(recursive: true);
   });
