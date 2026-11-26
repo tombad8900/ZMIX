@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
+import 'audio_attach.dart';
 import 'diagnostics.dart';
 import 'models.dart';
 import 'playback_switcher.dart';
@@ -129,7 +130,9 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
   Future<void> _openStream(String url,
       {required bool play, String? attemptId}) {
     _openGen = _switcher.beginOpen(url,
-        quality: _currentQuality, needsAudio: _currentNeedsAudio);
+        quality: _currentQuality,
+        needsAudio: _currentNeedsAudio,
+        audioUrl: _currentNeedsAudio ? _audioUrl : null);
     _attemptId = attemptId ?? Diag.I.newAttempt();
     Diag.I.outcome('بداية فتح المشغّل',
         stage: 'open',
@@ -234,7 +237,10 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
       // user on a dead player or print the raw signed URL (it carries the
       // device IP). Roll back to the last confirmed stream; show the panel
       // only when there is nothing to roll back to.
-      switch (_switcher.onError(_currentUrl)) {
+      switch (_switcher.onPlayerError(e, _currentUrl)) {
+        case IgnoreStaleError():
+          Diag.I.outcome('تجاهل خطأ من تشغيل سابق',
+              stage: 'open', attemptId: _attemptId, critical: true);
         case RollbackToLastGood(:final url, :final quality, :final needsAudio):
           setState(() {
             _error = null;
@@ -428,24 +434,13 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
 
   /// Re-attaches the external audio track when the current URL is a
   /// video-only adaptive stream; detaches it for muxed (audio built in).
-  Future<void> _reapplyAudio() async {
-    final audio = _audioUrl;
-    if (_currentNeedsAudio && audio != null) {
-      try {
-        await _player.setAudioTrack(AudioTrack.uri(audio));
-        Diag.I.outcome('إرفاق مسار الصوت الخارجي',
-            stage: 'audio',
-            detail: 'host=${Diag.hostOf(audio)}',
-            attemptId: _attemptId,
-            critical: true);
-      } catch (e) {
-        Diag.I.outcome('فشل إرفاق مسار الصوت',
-            stage: 'audio', ok: false, detail: '$e', attemptId: _attemptId);
-      }
-    } else {
-      await _player.setAudioTrack(AudioTrack.auto());
-    }
-  }
+  Future<void> _reapplyAudio() => reapplyExternalAudio(
+        currentNeedsAudio: _currentNeedsAudio,
+        audioUrl: _audioUrl,
+        attemptId: () => _attemptId,
+        setAudio: (url) => _player.setAudioTrack(
+            url == null ? AudioTrack.auto() : AudioTrack.uri(url)),
+      );
 
   // ── Quality ────────────────────────────────────────────────────────────
 
