@@ -295,11 +295,14 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     if (id == null || kIsWeb) return;
     final service = YoutubeService();
     try {
-      final choices =
-          await service.resolveStreamChoices(id, attemptId: _attemptId);
       // The user may have moved to another episode while this was loading.
-      if (mounted && isStaleForCurrent(id, _currentVideoId)) return;
-      if (mounted) {
+      final choices = await fetchIfStillCurrent(
+        requestedId: id,
+        currentId: () => _currentVideoId,
+        isMounted: () => mounted,
+        fetch: () => service.resolveStreamChoices(id, attemptId: _attemptId),
+      );
+      if (choices != null) {
         setState(() {
           _qualities = choices.qualities;
           _audioUrl = choices.audioUrl;
@@ -532,9 +535,13 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
     if (id == null || kIsWeb) return;
     final service = YoutubeService();
     try {
-      final tracks = await service.captionTracks(id);
-      if (!mounted) return;
-      if (isStaleForCurrent(id, _currentVideoId)) return; // moved on
+      final tracks = await fetchIfStillCurrent(
+        requestedId: id,
+        currentId: () => _currentVideoId,
+        isMounted: () => mounted,
+        fetch: () => service.captionTracks(id),
+      );
+      if (tracks == null) return; // moved on or unmounted
       setState(() => _captions = tracks);
       final pref = _preferredCaptionLang;
       if (pref != null && _activeCaption == null) {

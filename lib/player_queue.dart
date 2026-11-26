@@ -64,3 +64,21 @@ List<ZmixPanelEpisode> panelEpisodesFor(List<LibraryVideo> queue) => [
 /// [requestedId] must be dropped because the player has since moved on.
 bool isStaleForCurrent(String requestedId, String? currentId) =>
     requestedId != currentId;
+
+/// Runs [fetch] for [requestedId] and returns its result only if the page is
+/// still mounted and still playing [requestedId] when it completes; otherwise
+/// null (result dropped). [currentId] is read AFTER the await, so an episode
+/// switch that happens while the fetch is in flight is caught. Errors from
+/// [fetch] propagate to the caller. This is the single place the page's async
+/// loaders (qualities, captions) decide "still relevant".
+Future<T?> fetchIfStillCurrent<T>({
+  required String requestedId,
+  required String? Function() currentId,
+  required bool Function() isMounted,
+  required Future<T> Function() fetch,
+}) async {
+  final result = await fetch();
+  if (!isMounted()) return null;
+  if (isStaleForCurrent(requestedId, currentId())) return null;
+  return result;
+}
