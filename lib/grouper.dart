@@ -121,6 +121,11 @@ EpisodeInfo? classifyTitle(String title) {
     break;
   }
   if (matched == null || match == null) return null;
+  // An episode marker AND a part marker in one title ("الحلقة 3 الجزء 1") is
+  // ambiguous: which number orders it is a guess, so it stays ungrouped.
+  for (final p in _patterns) {
+    if (p.kind != matched.kind && p.regex.hasMatch(t)) return null;
+  }
 
   final prefix = t.substring(0, match.start);
   final seriesTitle = prefix
