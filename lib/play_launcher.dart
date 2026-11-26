@@ -5,6 +5,7 @@ import 'diagnostics.dart';
 import 'launch_gate.dart';
 import 'models.dart';
 import 'player_page.dart';
+import 'player_queue.dart';
 import 'storage.dart';
 import 'youtube_service.dart';
 
@@ -67,6 +68,7 @@ Future<void> _launch(
       playlistName: playlist.name,
     );
     if (!context.mounted) return;
+    final queue = playerQueueFor(playlist.videos, video);
     final pushed = Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PlayerPage(
@@ -74,9 +76,8 @@ Future<void> _launch(
           streamUrl: stream.url,
           qualityLabel: stream.quality,
           videoId: video.id,
-          siblings: playlist.videos,
-          videoIndex:
-              playlist.videos.indexWhere((v) => v.id == video.id),
+          siblings: queue.videos,
+          videoIndex: queue.index,
           store: store,
           playlistName: playlist.name,
           attemptId: attempt,
