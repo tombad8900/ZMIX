@@ -1,3 +1,4 @@
+import 'package:media_kit/media_kit.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 /// HTTP request headers that match the YouTube API client that produced a
@@ -27,3 +28,37 @@ Map<String, String>? headersForOpen({
   required Map<String, String>? clientHeaders,
 }) =>
     needsExternalAudio ? clientHeaders : null;
+
+/// The single place a player open builds its [Media]. Tests inspect this
+/// object (what media_kit's mpv on_load hook reads), not only the helper map.
+Media buildOpenMedia(
+  String url, {
+  required bool needsExternalAudio,
+  required Map<String, String>? clientHeaders,
+}) =>
+    Media(url,
+        httpHeaders: headersForOpen(
+            needsExternalAudio: needsExternalAudio,
+            clientHeaders: clientHeaders));
+
+/// Provenance-preserving manifest fetch: tries [first], then [second] when
+/// [first] throws or yields nothing. Each call asks the library for exactly
+/// ONE client (explicit `ytClients: [c]`; in 3.1.0 the loop runs only over the
+/// given list and the safari add-on applies only when ytClients is null), so
+/// every stream in the returned manifest came from the returned client.
+Future<({T manifest, YoutubeApiClient client})> fetchWithProvenance<T>(
+  Future<T> Function(YoutubeApiClient client) fetch,
+  bool Function(T manifest) isEmpty, {
+  YoutubeApiClient? first,
+  YoutubeApiClient? second,
+}) async {
+  final a = first ?? YoutubeApiClient.androidSdkless;
+  final b = second ?? YoutubeApiClient.tv;
+  try {
+    final m = await fetch(a);
+    if (!isEmpty(m)) return (manifest: m, client: a);
+  } catch (_) {
+    // fall through to the second client, like the library default
+  }
+  return (manifest: await fetch(b), client: b);
+}

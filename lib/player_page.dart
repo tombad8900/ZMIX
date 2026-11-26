@@ -145,9 +145,11 @@ class _PlayerPageState extends State<PlayerPage> with TickerProviderStateMixin {
             'منفصلة=${_currentNeedsAudio ? 'نعم' : 'لا'} play=$play');
     // Hypothesis-driven (stream_headers.dart): adaptive opens carry the
     // extraction client's declared headers; muxed opens are unchanged.
-    final headers = headersForOpen(
-        needsExternalAudio: _currentNeedsAudio, clientHeaders: _clientHeaders);
-    return _player.open(Media(url, httpHeaders: headers), play: play);
+    return _player.open(
+        buildOpenMedia(url,
+            needsExternalAudio: _currentNeedsAudio,
+            clientHeaders: _clientHeaders),
+        play: play);
   }
 
   // Subtitles (YouTube caption tracks -> SRT -> media_kit external track).

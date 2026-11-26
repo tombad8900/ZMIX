@@ -169,20 +169,18 @@ class YoutubeService {
     final StreamManifest manifest;
     final YoutubeApiClient usedClient;
     try {
-      // Same behavior as the library default (androidSdkless, then tv when
-      // that yields nothing) but explicit, so we know which client's URLs we
-      // hold and can pair them with that client's declared headers.
-      var used = YoutubeApiClient.androidSdkless;
-      var m = await _yt.videos.streamsClient
-          .getManifest(VideoId(videoId), ytClients: [used]).catchError(
-              (Object _) => StreamManifest(const []));
-      if (m.streams.isEmpty) {
-        used = YoutubeApiClient.tv;
-        m = await _yt.videos.streamsClient
-            .getManifest(VideoId(videoId), ytClients: [used]);
-      }
-      manifest = m;
-      usedClient = used;
+      // Same behavior as the library default (androidSdkless, then tv) but
+      // each call names ONE client, so every URL below has known provenance.
+      final r = await fetchWithProvenance<StreamManifest>(
+          (c) => _yt.videos.streamsClient
+              .getManifest(VideoId(videoId), ytClients: [c]),
+          (m) => m.streams.isEmpty);
+      manifest = r.manifest;
+      usedClient = r.client;
+      Diag.I.outcome('عميل الاستخراج',
+          stage: 'extract',
+          attemptId: attemptId,
+          detail: '${usedClient.payload['context']['client']['clientName']}');
     } catch (e) {
       Diag.I.outcome('فشل استخراج صيغ التشغيل',
           stage: 'extract', ok: false, detail: '$e', attemptId: attemptId);
