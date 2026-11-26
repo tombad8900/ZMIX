@@ -1,0 +1,37 @@
+name: Flutter tests (PR)
+
+# Tests only. No secrets, no build artifacts, no release or deploy steps.
+# Public repository, standard GitHub-hosted runner: free, not billed.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: flutter test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter test --reporter expanded
+      - name: Upload golden failure images
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-failures
+          path: test/failures/
+          if-no-files-found: ignore
+          retention-days: 7

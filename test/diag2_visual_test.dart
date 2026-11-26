@@ -55,7 +55,11 @@ void main() {
           .replaceAll(RegExp(r's:[0-9a-f]{6}'), 's:aaaaaa')
           .replaceAll(RegExp(r'الجلسة الحالية: [0-9a-f]{6} · تقرير: [0-9a-f]{6}'),
               'الجلسة الحالية: aaaaaa · تقرير: bbbbbb')
-          .replaceAll(RegExp(r'كل \d+ ث'), 'كل 1 ث');
+          .replaceAll(RegExp(r'كل \d+ ث'), 'كل 1 ث')
+          // The header prints the host OS name and kernel version, which differ
+          // between a dev box and a CI runner. Freeze that line (the only
+          // environment-dependent text in this golden).
+          .replaceAll(RegExp(r'النظام: [^\n]*'), 'النظام: linux test-os');
     });
     addTearDown(Diag.I.disposeForTest);
     tester.view.physicalSize = const Size(780, 1688);
